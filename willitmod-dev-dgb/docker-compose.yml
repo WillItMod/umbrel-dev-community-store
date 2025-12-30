@@ -1,0 +1,143 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      # Use a unique DNS alias to avoid collisions on Umbrel's shared Docker network.
+      APP_HOST: axedgb-app
+      APP_PORT: 3000
+
+  init:
+    image: alpine:3.22.1
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+    environment:
+      APPS_SUBNET: "${NETWORK_IP}/16"
+      APP_VERSION: "0.1.0-alpha"
+      UI_SOURCE_BASE: "https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-dgb"
+      RPC_USER: "dgb"
+      RPC_PASSWORD: "${APP_PASSWORD}"
+      DGB_P2P_PORT: "12024"
+      DGB_RPC_PORT: "14022"
+      DGB_ZMQ_HASHBLOCK_PORT: "28344"
+      PAYOUT_ADDRESS: "CHANGEME_DGB_PAYOUT_ADDRESS"
+    command:
+      - /bin/sh
+      - -ec
+      - |-
+        set -eu
+
+        apk add --no-cache envsubst curl >/dev/null
+
+        mkdir -p /data/node /data/pool/config /data/pool/www/pool /data/ui/static /data/templates
+
+        # Cleanup from older broken installs (a directory with the script name).
+        if [ -d /data/templates/init-entrypoint.sh ]; then
+          rm -rf /data/templates/init-entrypoint.sh || true
+        fi
+
+        # Note: Umbrel/docker-compose perform variable interpolation on this script.
+        # Use $$ to escape shell variables so they aren't substituted at compose-render time.
+        if [ -n "$$APP_VERSION" ] && [ -n "$$UI_SOURCE_BASE" ]; then
+          current="$$(cat /data/ui/VERSION 2>/dev/null || true)"
+          if [ "$$current" != "$$APP_VERSION" ]; then
+            echo "[axedgb] Updating UI to $$APP_VERSION"
+            tmp="$$(mktemp -d 2>/dev/null || echo /tmp/axebch-ui)"
+            mkdir -p "$$tmp/ui/static"
+            ok=1
+            set +e
+            curl -fsSL "$$UI_SOURCE_BASE/data/ui/app.py" -o "$$tmp/ui/app.py" || ok=0
+            curl -fsSL "$$UI_SOURCE_BASE/data/ui/static/index.html" -o "$$tmp/ui/static/index.html" || ok=0
+            curl -fsSL "$$UI_SOURCE_BASE/data/ui/static/app.js" -o "$$tmp/ui/static/app.js" || ok=0
+            curl -fsSL "$$UI_SOURCE_BASE/data/ui/static/app.css" -o "$$tmp/ui/static/app.css" || ok=0
+            set -e
+            if [ "$$ok" -eq 1 ]; then
+              mkdir -p /data/ui/static
+              cp -f "$$tmp/ui/app.py" /data/ui/app.py
+              cp -f "$$tmp/ui/static/index.html" /data/ui/static/index.html
+              cp -f "$$tmp/ui/static/app.js" /data/ui/static/app.js
+              cp -f "$$tmp/ui/static/app.css" /data/ui/static/app.css
+              printf "%s\n" "$$APP_VERSION" > /data/ui/VERSION
+              chown -R 1000:1000 /data/ui
+            else
+              echo "[axebch] WARNING: UI download failed; keeping existing UI"
+            fi
+            rm -rf "$$tmp" >/dev/null 2>&1 || true
+          fi
+        fi
+
+        if [ ! -f /data/node/digibyte.conf ]; then
+          envsubst < /data/templates/digibyte.conf.template > /data/node/digibyte.conf
+          chown -R 1000:1000 /data/node
+        fi
+
+        if [ ! -f /data/pool/config/ckpool.conf ]; then
+          envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
+          chown -R 1000:1000 /data/pool
+        else
+          if ! grep -q '"btcaddress"' /data/pool/config/ckpool.conf; then
+            mv /data/pool/config/ckpool.conf "/data/pool/config/ckpool.conf.bak.$(date +%s 2>/dev/null || echo 0)" || true
+            envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
+            chown -R 1000:1000 /data/pool
+          fi
+        fi
+
+  dgbd:
+    image: digibyte/digibyte:latest
+    user: "1000:1000"
+    restart: unless-stopped
+    stop_grace_period: 15m30s
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    ports:
+      - "12024:12024/tcp" # P2P
+    volumes:
+      - ${APP_DATA_DIR}/data/node:/data
+      - ${APP_DATA_DIR}/data/templates/dgb-entrypoint.sh:/dgb-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/dgb-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "digibyte-cli -datadir=/data getblockchaininfo >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 2m
+
+  ckpool:
+    image: ghcr.io/getumbrel/docker-ckpool-solo:590fb2a
+    command: "-k -B -c /config/ckpool.conf"
+    user: "1000:1000"
+    depends_on:
+      - dgbd
+    restart: on-failure
+    stop_grace_period: 30s
+    ports:
+      - "5678:3333/tcp"
+    volumes:
+      - ${APP_DATA_DIR}/data/pool/config:/config:ro
+      - ${APP_DATA_DIR}/data/pool/www:/www
+
+  app:
+    image: python:3.11-alpine
+    user: "1000:1000"
+    restart: on-failure
+    stop_grace_period: 30s
+    depends_on:
+      - dgbd
+      - ckpool
+    networks:
+      default:
+        aliases:
+          - axedgb-app
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+    environment:
+      DGB_RPC_HOST: "dgbd"
+      DGB_RPC_PORT: "14022"
+      DGB_RPC_USER: "dgb"
+      DGB_RPC_PASS: "${APP_PASSWORD}"
+      CKPOOL_STATUS_DIR: "/data/pool/www/pool"
+      APP_CHANNEL: "ALPHA"
+      DGB_IMAGE: "digibyte/digibyte:latest"
+      CKPOOL_IMAGE: "ghcr.io/getumbrel/docker-ckpool-solo:590fb2a"
+    command: ["python", "/data/ui/app.py"]
