@@ -103,26 +103,23 @@ async function postJson(url, body) {
 }
 
 function showTab(tab) {
-  const dash = document.getElementById('view-dashboard');
+  const home = document.getElementById('view-home');
+  const pool = document.getElementById('view-pool');
   const settings = document.getElementById('view-settings');
-  const tDash = document.getElementById('tab-dashboard');
+  const tHome = document.getElementById('tab-home');
+  const tPool = document.getElementById('tab-pool');
   const tSet = document.getElementById('tab-settings');
 
-  const isSettings = tab === 'settings';
-  dash.classList.toggle('hidden', isSettings);
-  settings.classList.toggle('hidden', !isSettings);
-  tDash.classList.toggle('axe-tab--active', !isSettings);
-  tSet.classList.toggle('axe-tab--active', isSettings);
-}
+  const which = tab || 'home';
+  home.classList.toggle('hidden', which !== 'home');
+  pool.classList.toggle('hidden', which !== 'pool');
+  settings.classList.toggle('hidden', which !== 'settings');
 
-const SERIES_MAX_POINTS = 360; // 30 minutes at 5s
-const seriesWorkers = [];
-const seriesHashrate = [];
+  tHome.classList.toggle('axe-tab--active', which === 'home');
+  tPool.classList.toggle('axe-tab--active', which === 'pool');
+  tSet.classList.toggle('axe-tab--active', which === 'settings');
 
-function pushSeries(series, value) {
-  const v = typeof value === 'number' ? value : null;
-  series.push({ t: Date.now(), v: v == null ? 0 : v });
-  if (series.length > SERIES_MAX_POINTS) series.splice(0, series.length - SERIES_MAX_POINTS);
+  window.__activeTab = which;
 }
 
 function renderWorkersTable(items) {
@@ -194,28 +191,25 @@ async function refresh() {
     document.getElementById('workers').textContent = pool.workers ?? '—';
     document.getElementById('hashrate').textContent = pool.hashrate_ths ?? '—';
     document.getElementById('bestshare').textContent = pool.best_share ?? '—';
-
-    const wNum = typeof pool.workers === 'number' ? pool.workers : Number(pool.workers);
-    pushSeries(seriesWorkers, Number.isFinite(wNum) ? wNum : 0);
-
-    const hNum = typeof pool.hashrate_ths === 'number' ? pool.hashrate_ths : Number(pool.hashrate_ths);
-    pushSeries(seriesHashrate, Number.isFinite(hNum) ? hNum : 0);
-
-    drawSparkline(document.getElementById('chart-workers'), seriesWorkers, { format: (v) => String(Math.round(v)) });
-    drawSparkline(document.getElementById('chart-hashrate'), seriesHashrate, { format: (v) => v.toFixed(2) });
+    document.getElementById('workers-summary').textContent = pool.workers ?? '—';
+    document.getElementById('hashrate-summary').textContent = pool.hashrate_ths ?? '—';
+    document.getElementById('bestshare-summary').textContent = pool.best_share ?? '—';
   } catch {
     document.getElementById('workers').textContent = '—';
     document.getElementById('hashrate').textContent = '—';
     document.getElementById('bestshare').textContent = '—';
-    drawSparkline(document.getElementById('chart-workers'), []);
-    drawSparkline(document.getElementById('chart-hashrate'), []);
+    document.getElementById('workers-summary').textContent = '—';
+    document.getElementById('hashrate-summary').textContent = '—';
+    document.getElementById('bestshare-summary').textContent = '—';
   }
 
-  try {
-    const workers = await fetchJson('/api/pool/workers');
-    renderWorkersTable((workers && workers.workers) || []);
-  } catch {
-    renderWorkersTable([]);
+  if (window.__activeTab === 'pool') {
+    try {
+      const workers = await fetchJson('/api/pool/workers');
+      renderWorkersTable((workers && workers.workers) || []);
+    } catch {
+      renderWorkersTable([]);
+    }
   }
 }
 
@@ -234,10 +228,57 @@ async function loadSettings() {
   }
 }
 
-document.getElementById('tab-dashboard').addEventListener('click', () => showTab('dashboard'));
+function getTrail() {
+  const el = document.getElementById('trail');
+  const saved = localStorage.getItem('bchTrail');
+  if (saved && el && el.value !== saved) el.value = saved;
+  return (el && el.value) || saved || '30m';
+}
+
+async function refreshCharts() {
+  const trail = getTrail();
+  try {
+    const series = await fetchJson(`/api/timeseries/pool?trail=${encodeURIComponent(trail)}`);
+    const points = (series && series.points) || [];
+    const workers = points.map((p) => ({ v: Number(p.workers) || 0 }));
+    const hashrate = points.map((p) => ({ v: Number(p.hashrate_ths) || 0 }));
+    drawSparkline(document.getElementById('chart-workers'), workers, { format: (v) => String(Math.round(v)) });
+    drawSparkline(document.getElementById('chart-hashrate'), hashrate, { format: (v) => v.toFixed(2) });
+  } catch {
+    drawSparkline(document.getElementById('chart-workers'), []);
+    drawSparkline(document.getElementById('chart-hashrate'), []);
+  }
+}
+
+let chartInterval = null;
+function startChartInterval() {
+  if (chartInterval) return;
+  chartInterval = setInterval(() => {
+    if (window.__activeTab === 'pool') refreshCharts();
+  }, 30000);
+}
+
+document.getElementById('tab-home').addEventListener('click', () => showTab('home'));
+document.getElementById('tab-pool').addEventListener('click', async () => {
+  showTab('pool');
+  startChartInterval();
+  await refreshCharts();
+  await refresh();
+});
+document.getElementById('go-pool').addEventListener('click', async () => {
+  showTab('pool');
+  startChartInterval();
+  await refreshCharts();
+  await refresh();
+});
 document.getElementById('tab-settings').addEventListener('click', async () => {
   showTab('settings');
   await loadSettings();
+});
+
+document.getElementById('trail').addEventListener('change', async () => {
+  localStorage.setItem('bchTrail', document.getElementById('trail').value);
+  await refreshCharts();
 });
 
 document.getElementById('settings-form').addEventListener('submit', async (e) => {
@@ -256,3 +297,12 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
     status.textContent = `Error: ${err.message || err}`;
   }
 });
+
+// init
+window.__activeTab = 'home';
+showTab('home');
+startChartInterval();
+try {
+  const trail = localStorage.getItem('bchTrail');
+  if (trail) document.getElementById('trail').value = trail;
+} catch {}

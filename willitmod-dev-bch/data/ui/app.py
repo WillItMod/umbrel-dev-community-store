@@ -2,6 +2,8 @@ import base64
 import json
 import os
 import re
+import threading
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,11 +13,17 @@ from urllib.error import HTTPError, URLError
 STATIC_DIR = Path("/data/ui/static")
 CKPOOL_STATUS_DIR = Path(os.getenv("CKPOOL_STATUS_DIR", "/data/pool/www/pool"))
 NODE_CONF_PATH = Path("/data/node/bitcoin.conf")
+STATE_DIR = Path("/data/ui/state")
+POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
 BCH_RPC_USER = os.getenv("BCH_RPC_USER", "bch")
 BCH_RPC_PASS = os.getenv("BCH_RPC_PASS", "")
+
+SAMPLE_INTERVAL_S = int(os.getenv("SERIES_SAMPLE_INTERVAL_S", "30"))
+MAX_RETENTION_S = int(os.getenv("SERIES_MAX_RETENTION_S", str(7 * 24 * 60 * 60)))
+MAX_SERIES_POINTS = int(os.getenv("SERIES_MAX_POINTS", "20000"))
 
 
 def _json(data, status=200):
@@ -238,6 +246,111 @@ def _parse_pool_workers(raw: str):
         out.append({"worker": parts[0], "raw": line})
     return out
 
+def _now_ms():
+    return int(time.time() * 1000)
+
+
+class PoolSeries:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._points: list[dict] = []
+
+    def load(self):
+        cutoff_ms = _now_ms() - (MAX_RETENTION_S * 1000)
+        points: list[dict] = []
+        if POOL_SERIES_PATH.exists():
+            for line in POOL_SERIES_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    t = int(obj.get("t") or 0)
+                    if t >= cutoff_ms:
+                        points.append(obj)
+                except Exception:
+                    continue
+
+        points.sort(key=lambda p: p.get("t", 0))
+        if len(points) > MAX_SERIES_POINTS:
+            points = points[-MAX_SERIES_POINTS:]
+
+        with self._lock:
+            self._points = points
+
+        # Rewrite the file if we dropped old points or it's missing.
+        self._rewrite(points)
+
+    def _rewrite(self, points: list[dict]):
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = POOL_SERIES_PATH.with_suffix(".tmp")
+        tmp.write_text("\n".join(json.dumps(p, separators=(",", ":")) for p in points) + ("\n" if points else ""), encoding="utf-8")
+        tmp.replace(POOL_SERIES_PATH)
+
+    def append(self, point: dict):
+        cutoff_ms = _now_ms() - (MAX_RETENTION_S * 1000)
+        with self._lock:
+            self._points.append(point)
+            self._points = [p for p in self._points if int(p.get("t") or 0) >= cutoff_ms]
+            if len(self._points) > MAX_SERIES_POINTS:
+                self._points = self._points[-MAX_SERIES_POINTS:]
+
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            with POOL_SERIES_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(point, separators=(",", ":")) + "\n")
+
+            # Occasionally compact the file (simple heuristic).
+            if POOL_SERIES_PATH.stat().st_size > 10 * 1024 * 1024:
+                self._rewrite(self._points)
+
+    def query(self, trail: str, max_points: int = 1000):
+        trail = (trail or "").strip().lower()
+        seconds = {
+            "30m": 30 * 60,
+            "6h": 6 * 60 * 60,
+            "12h": 12 * 60 * 60,
+            "1d": 24 * 60 * 60,
+            "3d": 3 * 24 * 60 * 60,
+            "6d": 6 * 24 * 60 * 60,
+            "7d": 7 * 24 * 60 * 60,
+        }.get(trail, 30 * 60)
+
+        cutoff_ms = _now_ms() - (seconds * 1000)
+        with self._lock:
+            pts = [p for p in self._points if int(p.get("t") or 0) >= cutoff_ms]
+
+        if len(pts) <= max_points:
+            return pts
+
+        stride = (len(pts) + max_points - 1) // max_points
+        return pts[::stride]
+
+
+POOL_SERIES = PoolSeries()
+
+
+def _series_sampler(stop_event: threading.Event):
+    while not stop_event.is_set():
+        try:
+            status = _parse_pool_status(_read_pool_status_raw())
+            workers = status.get("workers")
+            try:
+                workers_i = int(workers)
+            except Exception:
+                workers_i = 0
+
+            hashrate = status.get("hashrate_ths")
+            try:
+                hashrate_f = float(hashrate)
+            except Exception:
+                hashrate_f = None
+
+            POOL_SERIES.append({"t": _now_ms(), "workers": workers_i, "hashrate_ths": hashrate_f})
+        except Exception:
+            pass
+
+        stop_event.wait(SAMPLE_INTERVAL_S)
+
 
 def _widget_sync():
     try:
@@ -302,6 +415,21 @@ class Handler(BaseHTTPRequestHandler):
             workers = _parse_pool_workers(raw)
             return self._send(*_json({"workers": workers}))
 
+        if self.path.startswith("/api/timeseries/pool"):
+            try:
+                query = ""
+                if "?" in self.path:
+                    _, query = self.path.split("?", 1)
+                trail = "30m"
+                for part in query.split("&"):
+                    if part.startswith("trail="):
+                        trail = part.split("=", 1)[1]
+                        break
+                pts = POOL_SERIES.query(trail=trail, max_points=1000)
+                return self._send(*_json({"trail": trail, "points": pts}))
+            except Exception as e:
+                return self._send(*_json({"error": str(e)}, status=500))
+
         if self.path == "/api/widget/sync":
             return self._send(*_json(_widget_sync()))
 
@@ -347,6 +475,13 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     CKPOOL_STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    POOL_SERIES.load()
+
+    stop_event = threading.Event()
+    t = threading.Thread(target=_series_sampler, args=(stop_event,), daemon=True)
+    t.start()
+
     ThreadingHTTPServer(("0.0.0.0", 3000), Handler).serve_forever()
 
 

@@ -64,6 +64,7 @@
   .axe-tab--active { @apply bg-white/10 text-white; }
 
   .axe-field { @apply rounded-2xl border border-white/10 bg-black/25 p-4; }
+  .axe-field--compact { @apply p-3; }
   .axe-label { @apply block text-xs font-bold uppercase tracking-wider text-slate-300; }
   .axe-help { @apply mt-2 text-xs text-slate-400; }
   .axe-input { @apply mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-slate-100 outline-none ring-0 focus:border-white/20; }
