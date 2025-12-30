@@ -48,7 +48,7 @@ services:
   bchn:
     image: mainnet/bitcoin-cash-node:v28.0.1@sha256:eb667e2a483ff780d047a16ee59799dd45ad46c25fa96a9372f86d10bd6250fa
     user: "1000:1000"
-    restart: on-failure
+    restart: unless-stopped
     stop_grace_period: 15m30s
     depends_on:
       init:
@@ -61,12 +61,19 @@ services:
       - /bin/sh
       - -ec
     command: |-
+      echo "[axebch] BCHN wrapper starting"
+      echo "[axebch] PATH=$PATH"
+      if ! command -v bitcoind >/dev/null 2>&1; then
+        echo "[axebch] ERROR: bitcoind not found in PATH"
+        exit 127
+      fi
       extra=""
       if [ -f /data/.reindex-chainstate ]; then
         echo "[axebch] Reindex requested (chainstate)."
         rm -f /data/.reindex-chainstate || true
         extra="-reindex-chainstate"
       fi
+      echo "[axebch] Exec: bitcoind -datadir=/data -printtoconsole ${extra}"
       exec bitcoind -datadir=/data -printtoconsole $extra
     healthcheck:
       test: ["CMD-SHELL", "bitcoin-cli -datadir=/data getblockchaininfo >/dev/null 2>&1"]
