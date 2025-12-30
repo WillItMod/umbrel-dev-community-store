@@ -2,7 +2,7 @@ manifestVersion: 1
 id: willitmod-dev-bch
 category: bitcoin
 name: AxeBCH
-version: "0.6.5-alpha"
+version: "0.6.6-alpha"
 tagline: BCH node + solo pool
 description: >-
   Run a Bitcoin Cash full node (BCHN) and a solo Stratum v1 pool (ckpool) as a single Umbrel app installation.
@@ -22,7 +22,8 @@ description: >-
 
 
   Notes:
-    - For compatibility, use a legacy BCH address (`1...` / `3...`) as the payout address.
+    - For maximum compatibility, use a legacy BCH Base58 address (`1...` / `3...`) as the payout address.
+    - Many wallets (e.g. Trust Wallet) show CashAddr (`q...` / `p...`); convert to a legacy address (or enable legacy display) before saving.
     - Solo mining is extremely unlikely to find blocks without significant hashrate.
     - This app generates an anonymous install ID used for support ticket submissions.
 
