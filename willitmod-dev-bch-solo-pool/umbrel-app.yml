@@ -1,4 +1,4 @@
-manifestVersion: 1.1
+manifestVersion: 1
 id: willitmod-dev-bch-solo-pool
 category: bitcoin
 name: Bitcoin Cash Solo Pool
@@ -37,4 +37,3 @@ path: ""
 defaultUsername: "admin"
 deterministicPassword: true
 submitter: WillItMod
-

@@ -1,4 +1,4 @@
-manifestVersion: 1.1
+manifestVersion: 1
 id: willitmod-dev-bch-node
 category: bitcoin
 name: Bitcoin Cash Node
@@ -34,4 +34,3 @@ backupIgnore:
   - data/node/chainstate
   - data/node/indexes
 submitter: WillItMod
-
