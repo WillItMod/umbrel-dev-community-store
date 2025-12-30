@@ -30,9 +30,9 @@ support: https://github.com/WillItMod/umbrel-dev-community-store/issues
 dependencies:
   - willitmod-dev-bch-node
 port: 21211
-icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-solo-pool/icon.svg
+icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-solo-pool/icon.png
 gallery:
-  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-solo-pool/icon.svg
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-solo-pool/icon.png
 path: ""
 defaultUsername: "admin"
 deterministicPassword: true
