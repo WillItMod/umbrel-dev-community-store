@@ -9,12 +9,27 @@ if [ -n "${APP_VERSION:-}" ] && [ -n "${UI_SOURCE_BASE:-}" ]; then
   current="$(cat /data/ui/VERSION 2>/dev/null || true)"
   if [ "$current" != "$APP_VERSION" ]; then
     echo "[axebch] Updating UI to $APP_VERSION"
-    curl -fsSL "${UI_SOURCE_BASE}/data/ui/app.py" -o /data/ui/app.py
-    curl -fsSL "${UI_SOURCE_BASE}/data/ui/static/index.html" -o /data/ui/static/index.html
-    curl -fsSL "${UI_SOURCE_BASE}/data/ui/static/app.js" -o /data/ui/static/app.js
-    curl -fsSL "${UI_SOURCE_BASE}/data/ui/static/app.css" -o /data/ui/static/app.css
-    printf "%s\n" "$APP_VERSION" > /data/ui/VERSION
-    chown -R 1000:1000 /data/ui
+    tmp="$(mktemp -d 2>/dev/null || echo /tmp/axebch-ui)"
+    mkdir -p "$tmp/ui/static"
+    ok=1
+    set +e
+    curl -fsSL "${UI_SOURCE_BASE}/data/ui/app.py" -o "$tmp/ui/app.py" || ok=0
+    curl -fsSL "${UI_SOURCE_BASE}/data/ui/static/index.html" -o "$tmp/ui/static/index.html" || ok=0
+    curl -fsSL "${UI_SOURCE_BASE}/data/ui/static/app.js" -o "$tmp/ui/static/app.js" || ok=0
+    curl -fsSL "${UI_SOURCE_BASE}/data/ui/static/app.css" -o "$tmp/ui/static/app.css" || ok=0
+    set -e
+    if [ "$ok" -eq 1 ]; then
+      mkdir -p /data/ui/static
+      cp -f "$tmp/ui/app.py" /data/ui/app.py
+      cp -f "$tmp/ui/static/index.html" /data/ui/static/index.html
+      cp -f "$tmp/ui/static/app.js" /data/ui/static/app.js
+      cp -f "$tmp/ui/static/app.css" /data/ui/static/app.css
+      printf "%s\n" "$APP_VERSION" > /data/ui/VERSION
+      chown -R 1000:1000 /data/ui
+    else
+      echo "[axebch] WARNING: UI download failed; keeping existing UI"
+    fi
+    rm -rf "$tmp" >/dev/null 2>&1 || true
   fi
 fi
 
@@ -33,4 +48,3 @@ else
     chown -R 1000:1000 /data/pool
   fi
 fi
-

@@ -15,7 +15,7 @@ services:
       - ${APP_DATA_DIR}/data/templates/init-entrypoint.sh:/init-entrypoint.sh:ro
     environment:
       APPS_SUBNET: "${NETWORK_IP}/16"
-      APP_VERSION: "0.6.6-alpha.1"
+      APP_VERSION: "0.6.7-alpha"
       UI_SOURCE_BASE: "https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch"
       RPC_USER: "bch"
       RPC_PASSWORD: "${APP_PASSWORD}"
@@ -38,6 +38,12 @@ services:
       - ${APP_DATA_DIR}/data/node:/data
       - ${APP_DATA_DIR}/data/templates/bchn-entrypoint.sh:/bchn-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/bchn-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -datadir=/data getblockchaininfo >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 2m
 
   ckpool:
     image: ghcr.io/getumbrel/docker-ckpool-solo:590fb2a
