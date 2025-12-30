@@ -33,6 +33,13 @@ description: >-
     - This Umbrel app wires these components together; it does not patch BCHN/ckpool source code.
 
 
+  Licenses:
+    - BCHN: MIT (https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node)
+    - ckpool: GPLv3 (https://github.com/ctubio/ckpool)
+    - getumbrel/docker-ckpool-solo: MIT (https://github.com/getumbrel/docker-ckpool-solo)
+    - Source and license texts for bundled components are available in the upstream repos above.
+
+
   Status:
     - ALPHA build: expect bugs and breaking changes. Verify payout addresses before mining.
 developer: WillItMod
