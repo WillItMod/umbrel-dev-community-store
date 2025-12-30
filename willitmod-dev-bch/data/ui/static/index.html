@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bitcoin Cash</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body class="min-h-screen bg-axe-950 text-slate-100">
+    <div class="mx-auto max-w-6xl p-5 md:p-8">
+      <header class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="axe-icon">
+            <div class="axe-icon__inner">
+              <span class="text-xl font-extrabold tracking-wide">BCH</span>
+            </div>
+          </div>
+          <div>
+            <div class="text-2xl font-extrabold tracking-tight">Bitcoin Cash</div>
+            <div class="text-sm text-slate-300">Node + Solo Pool</div>
+          </div>
+        </div>
+        <div class="hidden items-center gap-2 md:flex">
+          <span id="status-pill" class="axe-pill">Loading…</span>
+        </div>
+      </header>
+
+      <div class="mt-6 flex items-center justify-between">
+        <div class="axe-tabs">
+          <button id="tab-dashboard" class="axe-tab axe-tab--active" type="button">Dashboard</button>
+          <button id="tab-settings" class="axe-tab" type="button">Settings</button>
+        </div>
+        <div class="hidden text-xs text-slate-400 md:block">
+          Changes require an app restart to apply.
+        </div>
+      </div>
+
+      <main id="view-dashboard" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <section class="axe-card lg:col-span-2">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-sm text-slate-300">Blockchain</div>
+              <div class="mt-1 text-3xl font-extrabold tracking-tight">
+                <span id="sync-text">—</span>
+              </div>
+              <div class="mt-2 text-sm text-slate-300" id="sync-subtext">—</div>
+            </div>
+            <div class="axe-ring">
+              <svg viewBox="0 0 120 120" class="h-28 w-28">
+                <defs>
+                  <linearGradient id="ringGrad" x1="0" y1="1" x2="1" y2="0">
+                    <stop offset="0" stop-color="#00e5ff" />
+                    <stop offset="0.5" stop-color="#ff2bd6" />
+                    <stop offset="1" stop-color="#ff9a00" />
+                  </linearGradient>
+                </defs>
+                <circle cx="60" cy="60" r="48" stroke="#1f2937" stroke-width="10" fill="none" />
+                <circle id="ring" cx="60" cy="60" r="48" stroke="url(#ringGrad)" stroke-width="10" fill="none"
+                  stroke-linecap="round" stroke-dasharray="301.6" stroke-dashoffset="301.6" />
+                <text id="ring-label" x="60" y="66" text-anchor="middle" class="fill-slate-100" style="font-weight:800;font-size:22px;">—%</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div class="axe-stat">
+              <div class="axe-stat__k">Blocks</div>
+              <div class="axe-stat__v" id="blocks">—</div>
+            </div>
+            <div class="axe-stat">
+              <div class="axe-stat__k">Headers</div>
+              <div class="axe-stat__v" id="headers">—</div>
+            </div>
+            <div class="axe-stat">
+              <div class="axe-stat__k">Peers</div>
+              <div class="axe-stat__v" id="peers">—</div>
+            </div>
+            <div class="axe-stat">
+              <div class="axe-stat__k">Mempool</div>
+              <div class="axe-stat__v" id="mempool">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="axe-card">
+          <div>
+            <div class="text-sm text-slate-300">Solo Pool</div>
+            <div class="mt-1 text-2xl font-extrabold tracking-tight">Stratum v1</div>
+            <div class="mt-2 text-sm text-slate-300">Connect miners to <span class="font-mono">:3333</span></div>
+          </div>
+
+          <div class="mt-5 grid grid-cols-1 gap-3">
+            <div class="axe-stat">
+              <div class="axe-stat__k">Workers</div>
+              <div class="axe-stat__v" id="workers">—</div>
+            </div>
+            <div class="axe-stat">
+              <div class="axe-stat__k">Hashrate</div>
+              <div class="axe-stat__v" id="hashrate">—</div>
+              <div class="axe-stat__k mt-1">TH/s (best-effort)</div>
+            </div>
+            <div class="axe-stat">
+              <div class="axe-stat__k">Best Share</div>
+              <div class="axe-stat__v" id="bestshare">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="axe-card lg:col-span-3">
+          <div class="text-sm text-slate-300">Setup</div>
+          <div class="mt-1 text-lg font-bold">Miner configuration</div>
+          <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div class="axe-note">
+              <div class="axe-note__k">URL</div>
+              <div class="axe-note__v font-mono">stratum+tcp://&lt;umbrel-ip&gt;:3333</div>
+            </div>
+            <div class="axe-note">
+              <div class="axe-note__k">Username</div>
+              <div class="axe-note__v font-mono">&lt;legacy-bch-address&gt;[.&lt;worker&gt;]</div>
+            </div>
+            <div class="axe-note">
+              <div class="axe-note__k">Password</div>
+              <div class="axe-note__v font-mono">anything</div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <main id="view-settings" class="mt-4 hidden">
+        <section class="axe-card">
+          <div class="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div class="text-sm text-slate-300">Node settings</div>
+              <div class="mt-1 text-lg font-bold">Network, pruning, indexes</div>
+              <div class="mt-1 text-sm text-slate-400">Saving updates `bitcoin.conf`. Restart the app after saving.</div>
+            </div>
+            <div id="settings-status" class="text-sm text-slate-400"></div>
+          </div>
+
+          <form id="settings-form" class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="axe-field">
+              <label class="axe-label" for="network">Network</label>
+              <select id="network" class="axe-input">
+                <option value="mainnet">Mainnet</option>
+                <option value="testnet">Testnet</option>
+                <option value="regtest">Regtest</option>
+              </select>
+              <div class="axe-help">Pick testnet/regtest for validation and development.</div>
+            </div>
+
+            <div class="axe-field">
+              <label class="axe-label" for="prune">Pruning</label>
+              <input id="prune" class="axe-input" type="number" min="0" step="1" />
+              <div class="axe-help"><span class="font-mono">0</span> = full archival, or <span class="font-mono">550</span>+ MiB target for pruned mode.</div>
+            </div>
+
+            <div class="axe-field">
+              <label class="axe-label" for="txindex">Transaction index</label>
+              <select id="txindex" class="axe-input">
+                <option value="0">Disabled</option>
+                <option value="1">Enabled</option>
+              </select>
+              <div class="axe-help">Enabling may require a reindex and more disk.</div>
+            </div>
+
+            <div class="axe-field md:col-span-2">
+              <button class="axe-btn" type="submit">Save settings</button>
+              <div class="mt-2 text-xs text-slate-400">After saving: restart the app from Umbrel to apply changes.</div>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <footer class="mt-8 text-center text-xs text-slate-500">
+        Dev store app. Images pinned by digest in <span class="font-mono">docker-compose.yml</span>.
+      </footer>
+    </div>
+  </body>
+</html>

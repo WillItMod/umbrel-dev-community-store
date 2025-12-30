@@ -1,9 +1,9 @@
 {
   "btcd": [
     {
-      "url": "umbrel.local:28332",
-      "auth": "bch",
-      "pass": "CHANGEME_BCH_NODE_APP_PASSWORD",
+      "url": "bchn:${BCH_RPC_PORT}",
+      "auth": "${RPC_USER}",
+      "pass": "${RPC_PASSWORD}",
       "notify": true
     }
   ],
@@ -12,6 +12,6 @@
   "startdiff": 16,
   "maxdiff": 0,
   "logdir": "/www",
-  "zmqblock": "tcp://umbrel.local:28334"
+  "zmqblock": "tcp://bchn:${BCH_ZMQ_HASHBLOCK_PORT}"
 }
 
