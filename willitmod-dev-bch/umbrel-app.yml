@@ -10,7 +10,7 @@ description: >-
 
   Features:
     - Axe-style dashboard for node sync and pool stats
-    - Pruning enabled by default (recommended for ARM)
+    - Pruning disabled by default (archival)
 
 
   Miner connection:
