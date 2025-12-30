@@ -25,18 +25,23 @@ description: >-
     - Solo mining is extremely unlikely to find blocks without significant hashrate.
 
 
-  Security / provenance:
-    - BCHN image: `mainnet/bitcoin-cash-node` (pinned by digest)
-    - ckpool image: `ghcr.io/getumbrel/docker-ckpool-solo` (pinned by digest)
+  Backend:
+    - Bitcoin Cash Node (BCHN) full node
+    - ckpool-solo Stratum v1 pool
+    - Images pinned by digest for reproducibility
+
+
+  Status:
+    - ALPHA build: expect bugs and breaking changes. Verify payout addresses before mining.
 developer: WillItMod
 website: https://github.com/WillItMod/umbrel-dev-community-store
 repo: https://github.com/WillItMod/umbrel-dev-community-store
 support: https://github.com/WillItMod/umbrel-dev-community-store/issues
 dependencies: []
 port: 21212
-icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/icon.svg
+icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/icon.png
 gallery:
-  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/icon.svg
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/icon.png
   - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/images/1.png
   - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/images/2.png
   - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/images/3.png

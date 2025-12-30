@@ -217,9 +217,9 @@ refresh();
 setInterval(refresh, 5000);
 
 function shortenImageRef(s) {
-  if (!s) return '—';
+  if (!s) return '-';
   const parts = String(s).split('@sha256:');
-  if (parts.length === 2) return `${parts[0]}@sha256:${parts[1].slice(0, 12)}…`;
+  if (parts.length === 2) return `${parts[0]}@sha256:${parts[1].slice(0, 12)}...`;
   return s;
 }
 
@@ -232,8 +232,8 @@ async function loadBackendInfo() {
     const sub = node && node.subversion ? node.subversion : 'node unavailable';
     const bchn = shortenImageRef(about.images && about.images.bchn);
     const ckpool = shortenImageRef(about.images && about.images.ckpool);
-    const channel = about.channel ? ` • ${about.channel}` : '';
-    el.textContent = `Backend: ${sub} • ckpool solo • ${bchn} • ${ckpool}${channel}`;
+    const channel = about.channel ? ` | ${about.channel}` : '';
+    el.textContent = `Backend: ${sub} | ckpool-solo (Stratum v1) | BCHN: ${bchn} | ckpool: ${ckpool}${channel}`;
   } catch {
     el.textContent = 'Backend info unavailable.';
   }
