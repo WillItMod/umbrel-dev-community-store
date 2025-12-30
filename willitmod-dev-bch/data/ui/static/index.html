@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bitcoin Cash v0.4.0 ALPHA</title>
+    <title>Bitcoin Cash v0.5.0 ALPHA</title>
     <link rel="stylesheet" href="/app.css" />
     <script defer src="/app.js"></script>
   </head>
@@ -17,7 +17,7 @@
             </div>
           </div>
           <div>
-            <div class="text-2xl font-extrabold tracking-tight">Bitcoin Cash v0.4.0 ALPHA</div>
+            <div class="text-2xl font-extrabold tracking-tight">Bitcoin Cash v0.5.0 ALPHA</div>
             <div class="text-sm text-slate-300">Node + Solo Pool</div>
           </div>
         </div>
@@ -288,6 +288,36 @@
             <div class="axe-field md:col-span-2">
               <button class="axe-btn" type="submit">Save pool settings</button>
               <div class="mt-2 text-xs text-slate-400">After saving: restart the app from Umbrel to apply changes.</div>
+            </div>
+          </form>
+        </section>
+
+        <section class="axe-card mt-4">
+          <div class="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div class="text-sm text-slate-300">Support</div>
+              <div class="mt-1 text-lg font-bold">Submit a support ticket</div>
+              <div class="mt-1 text-sm text-slate-400">Includes an anonymous install ID and basic diagnostics (sync + pool stats).</div>
+            </div>
+            <div id="support-status" class="text-sm text-slate-400"></div>
+          </div>
+
+          <form id="support-form" class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div class="axe-field md:col-span-2">
+              <label class="axe-label" for="support-subject">Subject</label>
+              <input id="support-subject" class="axe-input" type="text" placeholder="Short summary" />
+            </div>
+            <div class="axe-field md:col-span-2">
+              <label class="axe-label" for="support-message">Message</label>
+              <textarea id="support-message" class="axe-input" rows="6" placeholder="Describe the issue and what you expected."></textarea>
+            </div>
+            <div class="axe-field md:col-span-2">
+              <label class="axe-label" for="support-email">Email (optional)</label>
+              <input id="support-email" class="axe-input" type="email" placeholder="you@example.com" />
+              <div class="axe-help">Used only to reply to your ticket.</div>
+            </div>
+            <div class="axe-field md:col-span-2">
+              <button class="axe-btn" type="submit">Send ticket</button>
             </div>
           </form>
         </section>

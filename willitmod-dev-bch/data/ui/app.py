@@ -1,10 +1,12 @@
 import base64
 import json
 import os
+import platform
 import re
 import threading
 import time
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -16,11 +18,17 @@ CKPOOL_CONF_PATH = Path(os.getenv("CKPOOL_CONF_PATH", "/data/pool/config/ckpool.
 NODE_CONF_PATH = Path("/data/node/bitcoin.conf")
 STATE_DIR = Path("/data/ui/state")
 POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
+INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 CKPOOL_FALLBACK_DONATION_ADDRESS = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 BCHN_IMAGE = os.getenv("BCHN_IMAGE", "").strip()
 CKPOOL_IMAGE = os.getenv("CKPOOL_IMAGE", "").strip()
+SUPPORT_CHECKIN_URL = os.getenv("SUPPORT_CHECKIN_URL", "").strip()
+SUPPORT_TICKET_URL = os.getenv("SUPPORT_TICKET_URL", "").strip()
+
+APP_ID = "willitmod-dev-bch"
+APP_VERSION = "0.5.0-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -30,6 +38,8 @@ BCH_RPC_PASS = os.getenv("BCH_RPC_PASS", "")
 SAMPLE_INTERVAL_S = int(os.getenv("SERIES_SAMPLE_INTERVAL_S", "30"))
 MAX_RETENTION_S = int(os.getenv("SERIES_MAX_RETENTION_S", str(7 * 24 * 60 * 60)))
 MAX_SERIES_POINTS = int(os.getenv("SERIES_MAX_POINTS", "20000"))
+
+INSTALL_ID = None
 
 
 def _json(data, status=200):
@@ -75,6 +85,68 @@ def _rpc_call(method: str, params=None):
     if data.get("error"):
         raise RuntimeError(str(data["error"]))
     return data.get("result")
+
+
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def _write_text(path: Path, value: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(value.strip() + "\n", encoding="utf-8")
+
+
+def _get_or_create_install_id() -> str:
+    existing = _read_text(INSTALL_ID_PATH)
+    if existing:
+        return existing
+    new_id = uuid.uuid4().hex
+    _write_text(INSTALL_ID_PATH, new_id)
+    return new_id
+
+
+def _post_json(url: str, payload: dict, *, timeout_s: int = 6):
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        return resp.status, resp.read()
+
+
+def _support_payload_base() -> dict:
+    return {
+        "install_id": INSTALL_ID,
+        "app_id": APP_ID,
+        "app_version": APP_VERSION,
+        "channel": APP_CHANNEL or None,
+        "arch": platform.machine(),
+        "ts": int(time.time()),
+    }
+
+
+def _support_checkin_once():
+    if not SUPPORT_CHECKIN_URL:
+        return
+    try:
+        _post_json(SUPPORT_CHECKIN_URL, _support_payload_base(), timeout_s=6)
+    except Exception:
+        pass
+
+
+def _support_checkin_loop(stop_event: threading.Event):
+    _support_checkin_once()
+    while not stop_event.is_set():
+        stop_event.wait(24 * 60 * 60)
+        if stop_event.is_set():
+            break
+        _support_checkin_once()
 
 def _read_conf_kv(path: Path):
     if not path.exists():
@@ -347,6 +419,46 @@ def _parse_pool_workers(raw: str):
         out.append({"worker": parts[0], "raw": line})
     return out
 
+
+def _support_ticket_payload(*, subject: str, message: str, email: str | None):
+    diagnostics = {}
+    try:
+        node = _node_status()
+        diagnostics["node"] = {
+            "chain": node.get("chain"),
+            "blocks": node.get("blocks"),
+            "headers": node.get("headers"),
+            "progress": node.get("verificationprogress"),
+            "connections": node.get("connections"),
+            "subversion": node.get("subversion"),
+            "mempool_bytes": node.get("mempool_bytes"),
+        }
+    except Exception as e:
+        diagnostics["node_error"] = str(e)
+
+    try:
+        pool = _parse_pool_status(_read_pool_status_raw())
+        diagnostics["pool"] = {
+            "workers": pool.get("workers"),
+            "hashrate_ths": pool.get("hashrate_ths"),
+            "best_share": pool.get("best_share"),
+        }
+    except Exception as e:
+        diagnostics["pool_error"] = str(e)
+
+    payload = _support_payload_base()
+    payload.update(
+        {
+            "type": "support_ticket",
+            "subject": subject,
+            "message": message,
+            "email": email or None,
+            "diagnostics": diagnostics,
+        }
+    )
+    return payload
+
+
 def _now_ms():
     return int(time.time() * 1000)
 
@@ -489,7 +601,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.4"
+    server_version = "willitmod-dev-bch/0.5"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)
@@ -507,6 +619,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/pool/settings":
             return self._send(*_json(_pool_settings()))
+
+        if self.path == "/api/support/status":
+            return self._send(
+                *_json(
+                    {
+                        "ticketEnabled": bool(SUPPORT_TICKET_URL),
+                        "checkinEnabled": bool(SUPPORT_CHECKIN_URL),
+                    }
+                )
+            )
 
         if self.path == "/api/node":
             try:
@@ -584,6 +706,31 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(*_json({"error": str(e)}, status=400))
 
+        if self.path == "/api/support/ticket":
+            if not SUPPORT_TICKET_URL:
+                return self._send(*_json({"error": "support not configured"}, status=503))
+
+            subject = str(body.get("subject") or "").strip()
+            message = str(body.get("message") or "").strip()
+            email = str(body.get("email") or "").strip()
+
+            if len(subject) < 3 or len(subject) > 120:
+                return self._send(*_json({"error": "subject must be 3-120 chars"}, status=400))
+            if len(message) < 10 or len(message) > 8000:
+                return self._send(*_json({"error": "message must be 10-8000 chars"}, status=400))
+            if email and len(email) > 200:
+                return self._send(*_json({"error": "email too long"}, status=400))
+
+            payload = _support_ticket_payload(subject=subject, message=message, email=email or None)
+            try:
+                status, _resp = _post_json(SUPPORT_TICKET_URL, payload, timeout_s=10)
+                if int(status) >= 400:
+                    return self._send(*_json({"error": "support server error"}, status=502))
+            except Exception:
+                return self._send(*_json({"error": "support server unreachable"}, status=502))
+
+            return self._send(*_json({"ok": True}))
+
         return self._send(*_json({"error": "not found"}, status=404))
 
 
@@ -593,9 +740,15 @@ def main():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     POOL_SERIES.load()
 
+    global INSTALL_ID
+    INSTALL_ID = _get_or_create_install_id()
+
     stop_event = threading.Event()
     t = threading.Thread(target=_series_sampler, args=(stop_event,), daemon=True)
     t.start()
+
+    t2 = threading.Thread(target=_support_checkin_loop, args=(stop_event,), daemon=True)
+    t2.start()
 
     ThreadingHTTPServer(("0.0.0.0", 3000), Handler).serve_forever()
 

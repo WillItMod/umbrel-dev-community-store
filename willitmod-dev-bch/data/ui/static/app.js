@@ -361,6 +361,24 @@ document.getElementById('pool-settings-form').addEventListener('submit', async (
   }
 });
 
+document.getElementById('support-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const status = document.getElementById('support-status');
+  if (status) status.textContent = 'Sending...';
+  try {
+    await postJson('/api/support/ticket', {
+      subject: document.getElementById('support-subject').value,
+      message: document.getElementById('support-message').value,
+      email: document.getElementById('support-email').value,
+    });
+    if (status) status.textContent = 'Sent. Thanks!';
+    document.getElementById('support-subject').value = '';
+    document.getElementById('support-message').value = '';
+  } catch (err) {
+    if (status) status.textContent = `Error: ${err.message || err}`;
+  }
+});
+
 // init
 window.__activeTab = 'home';
 showTab('home');
