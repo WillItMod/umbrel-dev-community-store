@@ -3,7 +3,9 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      APP_HOST: willitmod-dev-bch_app_1
+      # Use the service name (DNS-safe). Container names like `*_app_1` contain underscores and
+      # can fail to resolve, causing app-proxy to fall back to external DNS.
+      APP_HOST: app
       APP_PORT: 3000
 
   init:
@@ -27,8 +29,7 @@ services:
           # Safety: ckpool defaults to a donation address if btcaddress is omitted.
           # Force regen with a placeholder so users must configure their own payout address.
           if ! grep -q '\"btcaddress\"' /data/pool/config/ckpool.conf; then
-            ts=$(date +%s || echo 0)
-            mv /data/pool/config/ckpool.conf "/data/pool/config/ckpool.conf.bak.${ts}" || true
+            mv /data/pool/config/ckpool.conf "/data/pool/config/ckpool.conf.bak.$(date +%s || echo 0)" || true
             envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
             chown -R 1000:1000 /data/pool
           fi
@@ -57,30 +58,8 @@ services:
       - "28333:28333/tcp" # P2P
     volumes:
       - ${APP_DATA_DIR}/data/node:/data
-    entrypoint:
-      - /bin/sh
-      - -ec
-    command: |-
-      echo "[axebch] BCHN wrapper starting"
-      echo "[axebch] PATH=$PATH"
-      if ! command -v bitcoind >/dev/null 2>&1; then
-        echo "[axebch] ERROR: bitcoind not found in PATH"
-        exit 127
-      fi
-      extra=""
-      if [ -f /data/.reindex-chainstate ]; then
-        echo "[axebch] Reindex requested (chainstate)."
-        rm -f /data/.reindex-chainstate || true
-        extra="-reindex-chainstate"
-      fi
-      echo "[axebch] Exec: bitcoind -datadir=/data -printtoconsole -daemon=0 ${extra}"
-      exec bitcoind -datadir=/data -printtoconsole -daemon=0 $extra
-    healthcheck:
-      test: ["CMD-SHELL", "bitcoin-cli -datadir=/data getblockchaininfo >/dev/null 2>&1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      - ${APP_DATA_DIR}/data/templates/bchn-entrypoint.sh:/bchn-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/bchn-entrypoint.sh"]
 
   ckpool:
     image: ghcr.io/getumbrel/docker-ckpool-solo:590fb2a@sha256:4e6b8f4f9c7d74c2111a6e082a2bbdc936fa510989a81e7cef714d1da944336b
