@@ -257,10 +257,11 @@ async function loadPoolSettings() {
     const addr = (s && s.payoutAddress) || '';
     const configured = Boolean(s && s.configured);
     const warning = (s && s.warning) || '';
+    const validationWarning = (s && s.validationWarning) || '';
 
     if (payoutEl) payoutEl.textContent = configured ? addr : 'not set';
     if (payoutInput && payoutInput.value !== addr) payoutInput.value = addr;
-    if (status) status.textContent = configured ? '' : warning || 'Payout address not configured.';
+    if (status) status.textContent = configured ? (validationWarning || '') : warning || 'Payout address not configured.';
     if (minerUser) minerUser.textContent = configured ? '<worker-name>' : '(set payout first)';
     if (warn) warn.classList.toggle('hidden', configured);
   } catch {

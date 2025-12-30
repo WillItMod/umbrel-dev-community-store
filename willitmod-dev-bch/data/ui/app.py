@@ -436,9 +436,13 @@ def _write_ckpool_conf(conf: dict):
 
 def _pool_settings():
     conf_addr = ""
+    validation_warning = None
+    validated = None
     try:
         conf = _read_ckpool_conf()
         conf_addr = str(conf.get("btcaddress") or "").strip()
+        validation_warning = conf.get("validationWarning")
+        validated = conf.get("validated")
     except Exception:
         conf_addr = ""
 
@@ -448,9 +452,16 @@ def _pool_settings():
         "CHANGEME_BCH_PAYOUT_ADDRESS",
     ]
 
+    if not isinstance(validation_warning, str):
+        validation_warning = None
+    if validated is not None:
+        validated = bool(validated)
+
     return {
         "payoutAddress": payout_address or "",
         "configured": configured,
+        "validated": validated,
+        "validationWarning": validation_warning,
         "warning": (
             "Set a payout address before mining. If unset, ckpool may default to a donation address."
             if not configured
@@ -459,21 +470,53 @@ def _pool_settings():
     }
 
 
+_CASHADDR_RE = re.compile(r"^(?:(?:bitcoincash|bchtest|bchreg):)?(?P<body>[qp][0-9a-z]{41,60})$", re.IGNORECASE)
+_LEGACY_RE = re.compile(r"^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$")
+
+
+def _normalize_bch_address(addr: str) -> str:
+    a = (addr or "").strip()
+    m = _CASHADDR_RE.match(a)
+    if m:
+        return m.group("body").lower()
+    return a
+
+
+def _looks_like_bch_address(addr: str) -> bool:
+    a = (addr or "").strip()
+    return bool(_CASHADDR_RE.match(a) or _LEGACY_RE.match(a))
+
+
 def _update_pool_settings(*, payout_address: str):
-    addr = payout_address.strip()
-    if not addr:
+    addr_raw = payout_address.strip()
+    if not addr_raw:
         raise ValueError("payoutAddress is required")
 
+    if not _looks_like_bch_address(addr_raw):
+        raise ValueError("payoutAddress must be a CashAddr (q/p...) or legacy (1/3...) BCH address")
+
+    addr = _normalize_bch_address(addr_raw)
+
+    validated = None
+    validation_warning = None
     try:
         res = _rpc_call("validateaddress", [addr]) or {}
-    except Exception as e:
-        raise ValueError(f"Unable to validate address via node RPC: {e}") from e
-
-    if not bool(res.get("isvalid")):
-        raise ValueError("payoutAddress is not a valid BCH address")
+        validated = bool(res.get("isvalid"))
+        if not validated:
+            raise ValueError("payoutAddress is not a valid BCH address")
+    except Exception:
+        validated = False
+        validation_warning = (
+            "Node RPC unavailable; saved without RPC validation. Double-check your address, then restart the app."
+        )
 
     conf = _read_ckpool_conf()
     conf["btcaddress"] = addr
+    conf["validated"] = bool(validated) if validated is not None else False
+    if validation_warning:
+        conf["validationWarning"] = validation_warning
+    else:
+        conf.pop("validationWarning", None)
     _write_ckpool_conf(conf)
 
     return _pool_settings()
