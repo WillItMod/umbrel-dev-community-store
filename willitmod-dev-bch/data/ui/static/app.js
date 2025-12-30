@@ -1,5 +1,5 @@
 function bytesToMiB(bytes) {
-  if (bytes == null) return '—';
+  if (bytes == null) return '-';
   return `${Math.max(0, bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
@@ -27,7 +27,7 @@ function drawSparkline(canvas, points, opts = {}) {
   if (!points.length) {
     ctx.fillStyle = 'rgba(148,163,184,0.6)';
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
-    ctx.fillText('—', 8, 22);
+    ctx.fillText('-', 8, 22);
     return;
   }
 
@@ -133,16 +133,16 @@ function renderWorkersTable(items) {
   }
 
   const rows = items.slice(0, 50).map((w) => {
-    const worker = w.worker || w.name || w.user || w.username || '—';
+    const worker = w.worker || w.name || w.user || w.username || '-';
     const last = w.lastshare || w.last_share || w.last || w.lastShare || '';
     const best = w.bestshare || w.best_share || w.best || '';
     const note = w.raw ? String(w.raw) : '';
     return `
       <tr class="hover:bg-white/5">
         <td class="px-4 py-3 font-mono">${escapeHtml(String(worker))}</td>
-        <td class="px-4 py-3">${escapeHtml(String(last || '—'))}</td>
-        <td class="px-4 py-3">${escapeHtml(String(best || '—'))}</td>
-        <td class="px-4 py-3 text-slate-400">${escapeHtml(note ? note.slice(0, 120) : '—')}</td>
+        <td class="px-4 py-3">${escapeHtml(String(last || '-'))}</td>
+        <td class="px-4 py-3">${escapeHtml(String(best || '-'))}</td>
+        <td class="px-4 py-3 text-slate-400">${escapeHtml(note ? note.slice(0, 120) : '-')}</td>
       </tr>
     `;
   });
@@ -166,11 +166,11 @@ async function refresh() {
     const ibd = !!node.initialblockdownload;
 
     document.getElementById('sync-text').textContent = ibd ? `Syncing ${pct}%` : `Synchronized ${pct}%`;
-    document.getElementById('sync-subtext').textContent = `${node.chain ?? '—'} • ${node.subversion ?? ''}`.trim();
+    document.getElementById('sync-subtext').textContent = `${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
 
-    document.getElementById('blocks').textContent = node.blocks ?? '—';
-    document.getElementById('headers').textContent = node.headers ?? '—';
-    document.getElementById('peers').textContent = node.connections ?? '—';
+    document.getElementById('blocks').textContent = node.blocks ?? '-';
+    document.getElementById('headers').textContent = node.headers ?? '-';
+    document.getElementById('peers').textContent = node.connections ?? '-';
     document.getElementById('mempool').textContent = bytesToMiB(node.mempool_bytes);
     setRing(progress);
 
@@ -188,19 +188,19 @@ async function refresh() {
 
   try {
     const pool = await fetchJson('/api/pool');
-    document.getElementById('workers').textContent = pool.workers ?? '—';
-    document.getElementById('hashrate').textContent = pool.hashrate_ths ?? '—';
-    document.getElementById('bestshare').textContent = pool.best_share ?? '—';
-    document.getElementById('workers-summary').textContent = pool.workers ?? '—';
-    document.getElementById('hashrate-summary').textContent = pool.hashrate_ths ?? '—';
-    document.getElementById('bestshare-summary').textContent = pool.best_share ?? '—';
+    document.getElementById('workers').textContent = pool.workers ?? '-';
+    document.getElementById('hashrate').textContent = pool.hashrate_ths ?? '-';
+    document.getElementById('bestshare').textContent = pool.best_share ?? '-';
+    document.getElementById('workers-summary').textContent = pool.workers ?? '-';
+    document.getElementById('hashrate-summary').textContent = pool.hashrate_ths ?? '-';
+    document.getElementById('bestshare-summary').textContent = pool.best_share ?? '-';
   } catch {
-    document.getElementById('workers').textContent = '—';
-    document.getElementById('hashrate').textContent = '—';
-    document.getElementById('bestshare').textContent = '—';
-    document.getElementById('workers-summary').textContent = '—';
-    document.getElementById('hashrate-summary').textContent = '—';
-    document.getElementById('bestshare-summary').textContent = '—';
+    document.getElementById('workers').textContent = '-';
+    document.getElementById('hashrate').textContent = '-';
+    document.getElementById('bestshare').textContent = '-';
+    document.getElementById('workers-summary').textContent = '-';
+    document.getElementById('hashrate-summary').textContent = '-';
+    document.getElementById('bestshare-summary').textContent = '-';
   }
 
   if (window.__activeTab === 'pool') {
@@ -221,6 +221,31 @@ function shortenImageRef(s) {
   const parts = String(s).split('@sha256:');
   if (parts.length === 2) return `${parts[0]}@sha256:${parts[1].slice(0, 12)}...`;
   return s;
+}
+
+async function loadPoolSettings() {
+  const status = document.getElementById('pool-settings-status');
+  const payoutEl = document.getElementById('payout-address');
+  const payoutInput = document.getElementById('payoutAddress');
+  const minerUser = document.getElementById('miner-username');
+  const warn = document.getElementById('payout-warning');
+  try {
+    const s = await fetchJson('/api/pool/settings');
+    const addr = (s && s.payoutAddress) || '';
+    const configured = Boolean(s && s.configured);
+    const warning = (s && s.warning) || '';
+
+    if (payoutEl) payoutEl.textContent = configured ? addr : 'not set';
+    if (payoutInput && payoutInput.value !== addr) payoutInput.value = addr;
+    if (status) status.textContent = configured ? '' : warning || 'Payout address not configured.';
+    if (minerUser) minerUser.textContent = configured ? '<worker-name>' : '(set payout first)';
+    if (warn) warn.classList.toggle('hidden', configured);
+  } catch {
+    if (payoutEl) payoutEl.textContent = 'unavailable';
+    if (status) status.textContent = 'Pool settings unavailable (app starting).';
+    if (minerUser) minerUser.textContent = 'unavailable';
+    if (warn) warn.classList.remove('hidden');
+  }
 }
 
 async function loadBackendInfo() {
@@ -297,6 +322,7 @@ document.getElementById('go-pool').addEventListener('click', async () => {
 document.getElementById('tab-settings').addEventListener('click', async () => {
   showTab('settings');
   await loadSettings();
+  await loadPoolSettings();
 });
 
 document.getElementById('trail').addEventListener('change', async () => {
@@ -307,7 +333,7 @@ document.getElementById('trail').addEventListener('change', async () => {
 document.getElementById('settings-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const status = document.getElementById('settings-status');
-  status.textContent = 'Saving…';
+  status.textContent = 'Saving...';
   try {
     const body = {
       network: document.getElementById('network').value,
@@ -321,11 +347,26 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
   }
 });
 
+document.getElementById('pool-settings-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const status = document.getElementById('pool-settings-status');
+  if (status) status.textContent = 'Saving...';
+  try {
+    const payoutAddress = document.getElementById('payoutAddress').value;
+    const res = await postJson('/api/pool/settings', { payoutAddress });
+    if (status) status.textContent = res.restartRequired ? 'Saved. Restart the app to apply.' : 'Saved.';
+    await loadPoolSettings();
+  } catch (err) {
+    if (status) status.textContent = `Error: ${err.message || err}`;
+  }
+});
+
 // init
 window.__activeTab = 'home';
 showTab('home');
 startChartInterval();
 loadBackendInfo();
+loadPoolSettings();
 try {
   const trail = localStorage.getItem('bchTrail');
   if (trail) document.getElementById('trail').value = trail;

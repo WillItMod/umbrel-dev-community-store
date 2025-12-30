@@ -12,9 +12,11 @@ from urllib.error import HTTPError, URLError
 
 STATIC_DIR = Path("/data/ui/static")
 CKPOOL_STATUS_DIR = Path(os.getenv("CKPOOL_STATUS_DIR", "/data/pool/www/pool"))
+CKPOOL_CONF_PATH = Path(os.getenv("CKPOOL_CONF_PATH", "/data/pool/config/ckpool.conf"))
 NODE_CONF_PATH = Path("/data/node/bitcoin.conf")
 STATE_DIR = Path("/data/ui/state")
 POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
+CKPOOL_FALLBACK_DONATION_ADDRESS = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 BCHN_IMAGE = os.getenv("BCHN_IMAGE", "").strip()
@@ -186,7 +188,83 @@ def _about():
         },
         "node": node,
         "nodeError": node_error,
+        "pool": _pool_settings(),
     }
+
+
+def _extract_json_obj(text: str):
+    s = text.strip()
+    if not s:
+        raise ValueError("empty json")
+
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+
+    last = s.rfind("}")
+    while last != -1:
+        try:
+            return json.loads(s[: last + 1])
+        except Exception:
+            last = s.rfind("}", 0, last)
+    raise ValueError("invalid json")
+
+
+def _read_ckpool_conf():
+    if not CKPOOL_CONF_PATH.exists():
+        return {}
+    return _extract_json_obj(CKPOOL_CONF_PATH.read_text(encoding="utf-8", errors="replace"))
+
+
+def _write_ckpool_conf(conf: dict):
+    CKPOOL_CONF_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CKPOOL_CONF_PATH.write_text(json.dumps(conf, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _pool_settings():
+    conf_addr = ""
+    try:
+        conf = _read_ckpool_conf()
+        conf_addr = str(conf.get("btcaddress") or "").strip()
+    except Exception:
+        conf_addr = ""
+
+    payout_address = conf_addr
+    configured = bool(payout_address) and payout_address not in [
+        CKPOOL_FALLBACK_DONATION_ADDRESS,
+        "CHANGEME_BCH_PAYOUT_ADDRESS",
+    ]
+
+    return {
+        "payoutAddress": payout_address or "",
+        "configured": configured,
+        "warning": (
+            "Set a payout address before mining. If unset, ckpool may default to a donation address."
+            if not configured
+            else None
+        ),
+    }
+
+
+def _update_pool_settings(*, payout_address: str):
+    addr = payout_address.strip()
+    if not addr:
+        raise ValueError("payoutAddress is required")
+
+    try:
+        res = _rpc_call("validateaddress", [addr]) or {}
+    except Exception as e:
+        raise ValueError(f"Unable to validate address via node RPC: {e}") from e
+
+    if not bool(res.get("isvalid")):
+        raise ValueError("payoutAddress is not a valid BCH address")
+
+    conf = _read_ckpool_conf()
+    conf["btcaddress"] = addr
+    _write_ckpool_conf(conf)
+
+    return _pool_settings()
 
 
 def _read_pool_status_raw():
@@ -392,7 +470,7 @@ def _widget_sync():
         return {
             "type": "text-with-progress",
             "title": "BCH sync",
-            "text": "—",
+            "text": "-",
             "progressLabel": "Unavailable",
             "progress": 0,
         }
@@ -403,15 +481,15 @@ def _widget_pool():
     return {
         "type": "three-stats",
         "items": [
-            {"title": "Hashrate", "text": str(p.get("hashrate_ths") or "—"), "subtext": "TH/s"},
+            {"title": "Hashrate", "text": str(p.get("hashrate_ths") or "-"), "subtext": "TH/s"},
             {"title": "Workers", "text": str(p.get("workers") or 0)},
-            {"title": "Best Share", "text": str(p.get("best_share") or "—")},
+            {"title": "Best Share", "text": str(p.get("best_share") or "-")},
         ],
     }
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.2"
+    server_version = "willitmod-dev-bch/0.4"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)
@@ -426,6 +504,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/settings":
             return self._send(*_json(_current_settings()))
+
+        if self.path == "/api/pool/settings":
+            return self._send(*_json(_pool_settings()))
 
         if self.path == "/api/node":
             try:
@@ -466,9 +547,6 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(status, body, ct)
 
     def do_POST(self):
-        if self.path != "/api/settings":
-            return self._send(*_json({"error": "not found"}, status=404))
-
         length = int(self.headers.get("content-length", "0") or "0")
         raw = self.rfile.read(length) if length > 0 else b"{}"
         try:
@@ -476,26 +554,37 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._send(*_json({"error": "invalid json"}, status=400))
 
-        network = str(body.get("network") or "").strip().lower()
-        prune_raw = body.get("prune")
-        txindex_raw = body.get("txindex")
+        if self.path == "/api/settings":
+            network = str(body.get("network") or "").strip().lower()
+            prune_raw = body.get("prune")
+            txindex_raw = body.get("txindex")
 
-        try:
-            prune = int(prune_raw)
-        except Exception:
-            return self._send(*_json({"error": "invalid prune"}, status=400))
+            try:
+                prune = int(prune_raw)
+            except Exception:
+                return self._send(*_json({"error": "invalid prune"}, status=400))
 
-        if prune != 0 and prune < 550:
-            return self._send(*_json({"error": "prune must be 0 or >= 550"}, status=400))
+            if prune != 0 and prune < 550:
+                return self._send(*_json({"error": "prune must be 0 or >= 550"}, status=400))
 
-        txindex = 1 if bool(txindex_raw) else 0
+            txindex = 1 if bool(txindex_raw) else 0
 
-        try:
-            _update_node_conf(network=network, prune=prune, txindex=txindex)
-        except Exception as e:
-            return self._send(*_json({"error": str(e)}, status=400))
+            try:
+                _update_node_conf(network=network, prune=prune, txindex=txindex)
+            except Exception as e:
+                return self._send(*_json({"error": str(e)}, status=400))
 
-        return self._send(*_json({"ok": True, "restartRequired": True}))
+            return self._send(*_json({"ok": True, "restartRequired": True}))
+
+        if self.path == "/api/pool/settings":
+            payout_address = str(body.get("payoutAddress") or "")
+            try:
+                settings = _update_pool_settings(payout_address=payout_address)
+                return self._send(*_json({"ok": True, "settings": settings, "restartRequired": True}))
+            except Exception as e:
+                return self._send(*_json({"error": str(e)}, status=400))
+
+        return self._send(*_json({"error": "not found"}, status=404))
 
 
 def main():

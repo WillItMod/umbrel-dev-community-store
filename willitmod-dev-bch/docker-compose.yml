@@ -23,6 +23,15 @@ services:
         if [ ! -f /data/pool/config/ckpool.conf ]; then
           envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
           chown -R 1000:1000 /data/pool
+        else
+          # Safety: ckpool defaults to a donation address if btcaddress is omitted.
+          # Force regen with a placeholder so users must configure their own payout address.
+          if ! grep -q '\"btcaddress\"' /data/pool/config/ckpool.conf; then
+            ts=$(date +%s || echo 0)
+            mv /data/pool/config/ckpool.conf "/data/pool/config/ckpool.conf.bak.${ts}" || true
+            envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
+            chown -R 1000:1000 /data/pool
+          fi
         fi
       '
     volumes:
@@ -34,6 +43,7 @@ services:
       BCH_P2P_PORT: "28333"
       BCH_RPC_PORT: "28332"
       BCH_ZMQ_HASHBLOCK_PORT: "28334"
+      PAYOUT_ADDRESS: "CHANGEME_BCH_PAYOUT_ADDRESS"
 
   bchn:
     image: mainnet/bitcoin-cash-node:v28.0.1@sha256:eb667e2a483ff780d047a16ee59799dd45ad46c25fa96a9372f86d10bd6250fa

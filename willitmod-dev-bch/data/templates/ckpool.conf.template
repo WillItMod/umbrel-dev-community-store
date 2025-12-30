@@ -7,6 +7,7 @@
       "notify": true
     }
   ],
+  "btcaddress": "${PAYOUT_ADDRESS}",
   "btcsig": "/mined by WillItMod on Umbrel/",
   "mindiff": 1,
   "startdiff": 16,
@@ -14,4 +15,3 @@
   "logdir": "/www",
   "zmqblock": "tcp://bchn:${BCH_ZMQ_HASHBLOCK_PORT}"
 }
-
