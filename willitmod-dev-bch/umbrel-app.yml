@@ -37,6 +37,9 @@ port: 21212
 icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/icon.svg
 gallery:
   - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/icon.svg
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/images/1.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/images/2.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch/images/3.png
 path: ""
 defaultUsername: ""
 defaultPassword: ""
@@ -75,4 +78,3 @@ backupIgnore:
   - data/node/chainstate
   - data/node/indexes
 submitter: WillItMod
-
