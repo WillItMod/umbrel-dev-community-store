@@ -1,8 +1,8 @@
 manifestVersion: 1
 id: willitmod-dev-bch
 category: bitcoin
-name: Bitcoin Cash
-version: "0.2.0-dev"
+name: Bitcoin Cash v0.3.0 ALPHA
+version: "0.3.0-alpha"
 tagline: BCH node + solo mining pool
 description: >-
   Run a Bitcoin Cash full node (BCHN) and a solo Stratum v1 pool (ckpool) in one install.

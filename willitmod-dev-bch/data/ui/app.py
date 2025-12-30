@@ -16,6 +16,10 @@ NODE_CONF_PATH = Path("/data/node/bitcoin.conf")
 STATE_DIR = Path("/data/ui/state")
 POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
 
+APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
+BCHN_IMAGE = os.getenv("BCHN_IMAGE", "").strip()
+CKPOOL_IMAGE = os.getenv("CKPOOL_IMAGE", "").strip()
+
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
 BCH_RPC_USER = os.getenv("BCH_RPC_USER", "bch")
@@ -163,6 +167,25 @@ def _node_status():
         "connections": int(net.get("connections") or 0),
         "subversion": str(net.get("subversion") or ""),
         "mempool_bytes": int(mempool.get("bytes") or 0),
+    }
+
+
+def _about():
+    node = None
+    node_error = None
+    try:
+        node = _node_status()
+    except Exception as e:
+        node_error = str(e)
+
+    return {
+        "channel": APP_CHANNEL or None,
+        "images": {
+            "bchn": BCHN_IMAGE or None,
+            "ckpool": CKPOOL_IMAGE or None,
+        },
+        "node": node,
+        "nodeError": node_error,
     }
 
 
@@ -398,6 +421,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path == "/api/about":
+            return self._send(*_json(_about()))
+
         if self.path == "/api/settings":
             return self._send(*_json(_current_settings()))
 

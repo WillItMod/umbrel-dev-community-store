@@ -216,6 +216,29 @@ async function refresh() {
 refresh();
 setInterval(refresh, 5000);
 
+function shortenImageRef(s) {
+  if (!s) return '—';
+  const parts = String(s).split('@sha256:');
+  if (parts.length === 2) return `${parts[0]}@sha256:${parts[1].slice(0, 12)}…`;
+  return s;
+}
+
+async function loadBackendInfo() {
+  const el = document.getElementById('backend-info');
+  if (!el) return;
+  try {
+    const about = await fetchJson('/api/about');
+    const node = about.node;
+    const sub = node && node.subversion ? node.subversion : 'node unavailable';
+    const bchn = shortenImageRef(about.images && about.images.bchn);
+    const ckpool = shortenImageRef(about.images && about.images.ckpool);
+    const channel = about.channel ? ` • ${about.channel}` : '';
+    el.textContent = `Backend: ${sub} • ckpool solo • ${bchn} • ${ckpool}${channel}`;
+  } catch {
+    el.textContent = 'Backend info unavailable.';
+  }
+}
+
 async function loadSettings() {
   try {
     const s = await fetchJson('/api/settings');
@@ -302,6 +325,7 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
 window.__activeTab = 'home';
 showTab('home');
 startChartInterval();
+loadBackendInfo();
 try {
   const trail = localStorage.getItem('bchTrail');
   if (trail) document.getElementById('trail').value = trail;

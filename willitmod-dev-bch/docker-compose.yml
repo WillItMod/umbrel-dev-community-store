@@ -83,5 +83,7 @@ services:
       BCH_RPC_USER: "bch"
       BCH_RPC_PASS: "${APP_PASSWORD}"
       CKPOOL_STATUS_DIR: "/data/pool/www/pool"
+      APP_CHANNEL: "ALPHA"
+      BCHN_IMAGE: "mainnet/bitcoin-cash-node:v28.0.1@sha256:eb667e2a483ff780d047a16ee59799dd45ad46c25fa96a9372f86d10bd6250fa"
+      CKPOOL_IMAGE: "ghcr.io/getumbrel/docker-ckpool-solo:590fb2a@sha256:4e6b8f4f9c7d74c2111a6e082a2bbdc936fa510989a81e7cef714d1da944336b"
     command: ["python", "/data/ui/app.py"]
-
