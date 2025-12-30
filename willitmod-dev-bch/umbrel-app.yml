@@ -5,7 +5,7 @@ name: Bitcoin Cash v0.4.0 ALPHA
 version: "0.4.0-alpha"
 tagline: BCH node + solo mining pool
 description: >-
-  Run a Bitcoin Cash full node (BCHN) and a solo Stratum v1 pool (ckpool) in one install.
+  Run a Bitcoin Cash full node (BCHN) and a solo Stratum v1 pool (ckpool) as a single Umbrel app installation.
 
 
   Features:
@@ -26,10 +26,11 @@ description: >-
     - Solo mining is extremely unlikely to find blocks without significant hashrate.
 
 
-  Backend:
-    - Bitcoin Cash Node (BCHN) full node
-    - ckpool-solo Stratum v1 pool
-    - Images pinned by digest for reproducibility
+  Backend (provenance):
+    - Bitcoin Cash Node (BCHN) full node (MIT): https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node
+    - ckpool (GPLv3) solo pool engine: https://github.com/ctubio/ckpool
+    - Pool container image: https://github.com/getumbrel/docker-ckpool-solo
+    - This Umbrel app wires these components together; it does not patch BCHN/ckpool source code.
 
 
   Status:
