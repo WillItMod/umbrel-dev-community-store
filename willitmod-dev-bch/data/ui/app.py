@@ -172,6 +172,20 @@ def _read_pool_status_raw():
                 continue
     return ""
 
+def _read_pool_workers_raw():
+    candidates = [
+        CKPOOL_STATUS_DIR / "pool.workers",
+        Path("/data/pool/www/pool.workers"),
+        Path("/data/pool/www/pool/pool.workers"),
+    ]
+    for path in candidates:
+        if path.exists() and path.is_file():
+            try:
+                return path.read_text(encoding="utf-8", errors="replace").strip()
+            except Exception:
+                continue
+    return ""
+
 
 def _parse_pool_status(raw: str):
     if not raw:
@@ -186,6 +200,43 @@ def _parse_pool_status(raw: str):
         }
     except Exception:
         return {"workers": 0, "hashrate_ths": None, "best_share": None}
+
+def _parse_pool_workers(raw: str):
+    if not raw:
+        return []
+
+    # Best case: JSON list or object
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            # Some formats store under a key
+            for key in ["workers", "data", "result"]:
+                if isinstance(data.get(key), list):
+                    return data[key]
+            # Or a dict keyed by worker
+            if all(isinstance(v, dict) for v in data.values()):
+                out = []
+                for k, v in data.items():
+                    item = dict(v)
+                    item.setdefault("worker", k)
+                    out.append(item)
+                return out
+    except Exception:
+        pass
+
+    # Fallback: parse lines "worker ... lastshare ..."
+    out = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p for p in line.replace("\t", " ").split(" ") if p]
+        if not parts:
+            continue
+        out.append({"worker": parts[0], "raw": line})
+    return out
 
 
 def _widget_sync():
@@ -245,6 +296,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/pool":
             return self._send(*_json(_parse_pool_status(_read_pool_status_raw())))
+
+        if self.path == "/api/pool/workers":
+            raw = _read_pool_workers_raw()
+            workers = _parse_pool_workers(raw)
+            return self._send(*_json({"workers": workers}))
 
         if self.path == "/api/widget/sync":
             return self._send(*_json(_widget_sync()))

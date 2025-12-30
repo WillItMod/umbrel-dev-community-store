@@ -105,6 +105,21 @@
               <div class="axe-stat__v" id="bestshare">—</div>
             </div>
           </div>
+
+          <div class="mt-5 grid grid-cols-1 gap-3">
+            <div class="axe-stat">
+              <div class="flex items-center justify-between">
+                <div class="axe-stat__k">Workers (last 30m)</div>
+              </div>
+              <canvas id="chart-workers" class="mt-2 w-full rounded-xl bg-black/30" height="72"></canvas>
+            </div>
+            <div class="axe-stat">
+              <div class="flex items-center justify-between">
+                <div class="axe-stat__k">Hashrate TH/s (last 30m)</div>
+              </div>
+              <canvas id="chart-hashrate" class="mt-2 w-full rounded-xl bg-black/30" height="72"></canvas>
+            </div>
+          </div>
         </section>
 
         <section class="axe-card lg:col-span-3">
@@ -123,6 +138,35 @@
               <div class="axe-note__k">Password</div>
               <div class="axe-note__v font-mono">anything</div>
             </div>
+          </div>
+        </section>
+
+        <section class="axe-card lg:col-span-3">
+          <div class="flex items-end justify-between gap-4">
+            <div>
+              <div class="text-sm text-slate-300">Workers</div>
+              <div class="mt-1 text-lg font-bold">Connected miners (best-effort)</div>
+              <div class="mt-1 text-sm text-slate-400">If your ckpool build doesn’t export per-worker data, this table may be empty.</div>
+            </div>
+            <div class="text-xs text-slate-400" id="workers-meta"></div>
+          </div>
+
+          <div class="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/25">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-black/35 text-xs uppercase tracking-wider text-slate-300">
+                <tr>
+                  <th class="px-4 py-3">Worker</th>
+                  <th class="px-4 py-3">Last Share</th>
+                  <th class="px-4 py-3">Best</th>
+                  <th class="px-4 py-3">Notes</th>
+                </tr>
+              </thead>
+              <tbody id="workers-tbody" class="divide-y divide-white/10">
+                <tr>
+                  <td class="px-4 py-4 text-slate-400" colspan="4">Loading…</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
       </main>
