@@ -1,4 +1,5 @@
 import base64
+import io
 import json
 import os
 import platform
@@ -7,6 +8,7 @@ import threading
 import time
 import urllib.request
 import uuid
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -16,16 +18,31 @@ STATIC_DIR = Path("/data/ui/static")
 CKPOOL_STATUS_DIR = Path(os.getenv("CKPOOL_STATUS_DIR", "/data/pool/www/pool"))
 CKPOOL_CONF_PATH = Path(os.getenv("CKPOOL_CONF_PATH", "/data/pool/config/ckpool.conf"))
 NODE_CONF_PATH = Path("/data/node/bitcoin.conf")
+NODE_LOG_PATH = Path("/data/node/debug.log")
+NODE_REINDEX_FLAG_PATH = Path("/data/node/.reindex-chainstate")
 STATE_DIR = Path("/data/ui/state")
 POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
 INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
+NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
+CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
 CKPOOL_FALLBACK_DONATION_ADDRESS = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 BCHN_IMAGE = os.getenv("BCHN_IMAGE", "").strip()
 CKPOOL_IMAGE = os.getenv("CKPOOL_IMAGE", "").strip()
-SUPPORT_CHECKIN_URL = os.getenv("SUPPORT_CHECKIN_URL", "").strip()
-SUPPORT_TICKET_URL = os.getenv("SUPPORT_TICKET_URL", "").strip()
+DEFAULT_SUPPORT_BASE_URL = "https://axebench.dreamnet.uk"
+INSTALL_ID_HEADER = "X-Install-Id"
+
+def _env_or_default(name: str, default: str) -> str:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    val = raw.strip()
+    return val or default
+
+
+SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/telemetry/ping")
+SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
 APP_VERSION = "0.5.0-alpha"
@@ -108,14 +125,70 @@ def _get_or_create_install_id() -> str:
     return new_id
 
 
-def _post_json(url: str, payload: dict, *, timeout_s: int = 6):
+def _read_json(path: Path) -> dict:
+    try:
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_json(path: Path, data: dict):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _post_json(url: str, payload: dict, *, timeout_s: int = 6, headers: dict | None = None):
     body = json.dumps(payload).encode("utf-8")
+    all_headers = {"Content-Type": "application/json"}
+    if headers:
+        all_headers.update(headers)
     req = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=all_headers,
         method="POST",
     )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        return resp.status, resp.read()
+
+
+def _encode_multipart(fields: dict[str, str], files: dict[str, tuple[str, bytes, str]]):
+    boundary = uuid.uuid4().hex
+    crlf = "\r\n"
+    body = bytearray()
+
+    for name, value in fields.items():
+        body.extend(f"--{boundary}{crlf}".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="{name}"{crlf}{crlf}'.encode("utf-8"))
+        body.extend(value.encode("utf-8"))
+        body.extend(crlf.encode("utf-8"))
+
+    for name, (filename, data, content_type) in files.items():
+        body.extend(f"--{boundary}{crlf}".encode("utf-8"))
+        body.extend(
+            f'Content-Disposition: form-data; name="{name}"; filename="{filename}"{crlf}'.encode("utf-8")
+        )
+        body.extend(f"Content-Type: {content_type}{crlf}{crlf}".encode("utf-8"))
+        body.extend(data)
+        body.extend(crlf.encode("utf-8"))
+
+    body.extend(f"--{boundary}--{crlf}".encode("utf-8"))
+    return boundary, bytes(body)
+
+
+def _post_support_bundle(url: str, *, bundle_bytes: bytes, filename: str, timeout_s: int = 20):
+    boundary, body = _encode_multipart(fields={}, files={"bundle": (filename, bundle_bytes, "application/zip")})
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        INSTALL_ID_HEADER: str(INSTALL_ID or ""),
+    }
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         return resp.status, resp.read()
 
@@ -132,10 +205,15 @@ def _support_payload_base() -> dict:
 
 
 def _support_checkin_once():
-    if not SUPPORT_CHECKIN_URL:
-        return
     try:
-        _post_json(SUPPORT_CHECKIN_URL, _support_payload_base(), timeout_s=6)
+        now = time.time()
+        st = _read_json(CHECKIN_STATE_PATH)
+        last = float(st.get("last_ping_at") or 0.0)
+        if (now - last) < float(24 * 60 * 60):
+            return
+        payload = {"app": "AxeBCH", "version": APP_VERSION}
+        _post_json(SUPPORT_CHECKIN_URL, payload, timeout_s=6, headers={INSTALL_ID_HEADER: str(INSTALL_ID or "")})
+        _write_json(CHECKIN_STATE_PATH, {"last_ping_at": now})
     except Exception:
         pass
 
@@ -210,6 +288,46 @@ def _update_node_conf(network: str, prune: int, txindex: int):
     NODE_CONF_PATH.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
+def _tail_text(path: Path, *, max_bytes: int = 64 * 1024) -> str:
+    try:
+        if not path.exists():
+            return ""
+        size = path.stat().st_size
+        start = max(0, size - max_bytes)
+        with path.open("rb") as f:
+            f.seek(start)
+            raw = f.read()
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _detect_reindex_required() -> bool:
+    txt = _tail_text(NODE_LOG_PATH)
+    if not txt:
+        return False
+    lowered = txt.lower()
+    return ("previously been pruned" in lowered) and ("reindex" in lowered)
+
+
+def _request_reindex_chainstate():
+    try:
+        NODE_REINDEX_FLAG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        NODE_REINDEX_FLAG_PATH.write_text(str(int(time.time())) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _build_support_bundle_zip(payload: dict) -> tuple[bytes, str]:
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("ticket.json", json.dumps(payload, indent=2, sort_keys=True))
+        zf.writestr("about.json", json.dumps(_about(), indent=2, sort_keys=True))
+        zf.writestr("settings.json", json.dumps(_current_settings(), indent=2, sort_keys=True))
+    name = f"axebch-support-{int(time.time())}.zip"
+    return bio.getvalue(), name
+
+
 def _current_settings():
     conf = _read_conf_kv(NODE_CONF_PATH)
     net = "mainnet"
@@ -217,7 +335,7 @@ def _current_settings():
         net = "regtest"
     elif conf.get("testnet") == "1":
         net = "testnet"
-    prune = int(conf.get("prune") or 550)
+    prune = int(conf.get("prune") or 0)
     txindex = int(conf.get("txindex") or 0)
     return {"network": net, "prune": prune, "txindex": txindex}
 
@@ -232,7 +350,7 @@ def _node_status():
     progress = float(info.get("verificationprogress") or 0.0)
     ibd = bool(info.get("initialblockdownload", False))
 
-    return {
+    status = {
         "chain": info.get("chain"),
         "blocks": blocks,
         "headers": headers,
@@ -242,6 +360,28 @@ def _node_status():
         "subversion": str(net.get("subversion") or ""),
         "mempool_bytes": int(mempool.get("bytes") or 0),
     }
+
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        NODE_CACHE_PATH.write_text(json.dumps({"t": int(time.time()), "status": status}) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+    return status
+
+
+def _read_node_cache():
+    try:
+        if not NODE_CACHE_PATH.exists():
+            return None
+        obj = json.loads(NODE_CACHE_PATH.read_text(encoding="utf-8", errors="replace"))
+        t = int(obj.get("t") or 0)
+        status = obj.get("status") or {}
+        if not isinstance(status, dict):
+            return None
+        return {"t": t, "status": status}
+    except Exception:
+        return None
 
 
 def _about():
@@ -601,7 +741,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.5"
+    server_version = "willitmod-dev-bch/0.5.0"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)
@@ -631,10 +771,44 @@ class Handler(BaseHTTPRequestHandler):
             )
 
         if self.path == "/api/node":
+            reindex_requested = NODE_REINDEX_FLAG_PATH.exists()
+            reindex_required = _detect_reindex_required()
             try:
-                return self._send(*_json(_node_status()))
+                s = _node_status()
+                payload = dict(s)
+                payload.update(
+                    {
+                        "cached": False,
+                        "lastSeen": int(time.time()),
+                        "reindexRequested": reindex_requested,
+                        "reindexRequired": False,
+                    }
+                )
+                return self._send(*_json(payload))
             except (HTTPError, URLError, RuntimeError) as e:
-                return self._send(*_json({"error": str(e)}, status=503))
+                cached = _read_node_cache()
+                if cached:
+                    payload = dict(cached["status"])
+                    payload.update(
+                        {
+                            "cached": True,
+                            "lastSeen": int(cached["t"]),
+                            "error": str(e),
+                            "reindexRequested": reindex_requested,
+                            "reindexRequired": reindex_required,
+                        }
+                    )
+                    return self._send(*_json(payload))
+                return self._send(
+                    *_json(
+                        {
+                            "error": str(e),
+                            "reindexRequested": reindex_requested,
+                            "reindexRequired": reindex_required,
+                        },
+                        status=503,
+                    )
+                )
 
         if self.path == "/api/pool":
             return self._send(*_json(_parse_pool_status(_read_pool_status_raw())))
@@ -677,6 +851,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(*_json({"error": "invalid json"}, status=400))
 
         if self.path == "/api/settings":
+            prev = _current_settings()
             network = str(body.get("network") or "").strip().lower()
             prune_raw = body.get("prune")
             txindex_raw = body.get("txindex")
@@ -696,7 +871,16 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(*_json({"error": str(e)}, status=400))
 
-            return self._send(*_json({"ok": True, "restartRequired": True}))
+            reindex_required = False
+            try:
+                prev_prune = int(prev.get("prune") or 0)
+            except Exception:
+                prev_prune = 0
+            if prev_prune > 0 and prune == 0:
+                reindex_required = True
+                _request_reindex_chainstate()
+
+            return self._send(*_json({"ok": True, "restartRequired": True, "reindexRequired": reindex_required}))
 
         if self.path == "/api/pool/settings":
             payout_address = str(body.get("payoutAddress") or "")
@@ -723,13 +907,21 @@ class Handler(BaseHTTPRequestHandler):
 
             payload = _support_ticket_payload(subject=subject, message=message, email=email or None)
             try:
-                status, _resp = _post_json(SUPPORT_TICKET_URL, payload, timeout_s=10)
+                bundle, filename = _build_support_bundle_zip(payload)
+                status, resp = _post_support_bundle(
+                    SUPPORT_TICKET_URL, bundle_bytes=bundle, filename=filename, timeout_s=20
+                )
                 if int(status) >= 400:
                     return self._send(*_json({"error": "support server error"}, status=502))
+                try:
+                    data = json.loads(resp.decode("utf-8", errors="replace"))
+                    ticket = data.get("ticket") if isinstance(data, dict) else None
+                except Exception:
+                    ticket = None
             except Exception:
                 return self._send(*_json({"error": "support server unreachable"}, status=502))
 
-            return self._send(*_json({"ok": True}))
+            return self._send(*_json({"ok": True, "ticket": ticket}))
 
         return self._send(*_json({"error": "not found"}, status=404))
 

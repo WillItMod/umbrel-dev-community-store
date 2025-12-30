@@ -58,10 +58,22 @@ services:
     volumes:
       - ${APP_DATA_DIR}/data/node:/data
     entrypoint:
-      - bitcoind
-    command:
-      - -datadir=/data
-      - -printtoconsole
+      - /bin/sh
+      - -ec
+    command: >-
+      extra=""
+      if [ -f /data/.reindex-chainstate ]; then
+        echo "[axebch] Reindex requested (chainstate)."
+        rm -f /data/.reindex-chainstate || true
+        extra="-reindex-chainstate"
+      fi
+      exec bitcoind -datadir=/data -printtoconsole $extra
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -datadir=/data getblockchaininfo >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   ckpool:
     image: ghcr.io/getumbrel/docker-ckpool-solo:590fb2a@sha256:4e6b8f4f9c7d74c2111a6e082a2bbdc936fa510989a81e7cef714d1da944336b
@@ -96,8 +108,4 @@ services:
       APP_CHANNEL: "ALPHA"
       BCHN_IMAGE: "mainnet/bitcoin-cash-node:v28.0.1@sha256:eb667e2a483ff780d047a16ee59799dd45ad46c25fa96a9372f86d10bd6250fa"
       CKPOOL_IMAGE: "ghcr.io/getumbrel/docker-ckpool-solo:590fb2a@sha256:4e6b8f4f9c7d74c2111a6e082a2bbdc936fa510989a81e7cef714d1da944336b"
-      # Optional: used for anonymous check-ins / support ticket submission.
-      # Leave blank to disable outbound support traffic.
-      SUPPORT_CHECKIN_URL: ""
-      SUPPORT_TICKET_URL: ""
     command: ["python", "/data/ui/app.py"]

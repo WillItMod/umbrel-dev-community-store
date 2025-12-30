@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bitcoin Cash v0.5.0 ALPHA</title>
+    <title>AxeBCH v0.5.0_ALPHA</title>
     <link rel="stylesheet" href="/app.css" />
     <script defer src="/app.js"></script>
   </head>
@@ -17,8 +17,8 @@
             </div>
           </div>
           <div>
-            <div class="text-2xl font-extrabold tracking-tight">Bitcoin Cash v0.5.0 ALPHA</div>
-            <div class="text-sm text-slate-300">Node + Solo Pool</div>
+            <div class="text-2xl font-extrabold tracking-tight">AxeBCH v0.5.0_ALPHA</div>
+            <div class="text-sm text-slate-300">BCH Node + Solo Pool</div>
           </div>
         </div>
         <div class="hidden items-center gap-2 md:flex">
@@ -233,7 +233,10 @@
               <div class="mt-1 text-lg font-bold">Network, pruning, indexes</div>
               <div class="mt-1 text-sm text-slate-400">Saving updates `bitcoin.conf`. Restart the app after saving.</div>
             </div>
-            <div id="settings-status" class="text-sm text-slate-400"></div>
+            <div class="flex items-center gap-3">
+              <button id="support-jump" class="axe-btn" type="button">Support ticket</button>
+              <div id="settings-status" class="text-sm text-slate-400"></div>
+            </div>
           </div>
 
           <form id="settings-form" class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -292,12 +295,12 @@
           </form>
         </section>
 
-        <section class="axe-card mt-4">
+        <section class="axe-card mt-4" id="support-section">
           <div class="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
             <div>
               <div class="text-sm text-slate-300">Support</div>
               <div class="mt-1 text-lg font-bold">Submit a support ticket</div>
-              <div class="mt-1 text-sm text-slate-400">Includes an anonymous install ID and basic diagnostics (sync + pool stats).</div>
+              <div class="mt-1 text-sm text-slate-400">Includes basic diagnostics (sync + pool stats).</div>
             </div>
             <div id="support-status" class="text-sm text-slate-400"></div>
           </div>

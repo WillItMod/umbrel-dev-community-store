@@ -1,9 +1,9 @@
 manifestVersion: 1
 id: willitmod-dev-bch
 category: bitcoin
-name: Bitcoin Cash v0.5.0 ALPHA
+name: AxeBCH
 version: "0.5.0-alpha"
-tagline: BCH node + solo mining pool
+tagline: BCH node + solo pool
 description: >-
   Run a Bitcoin Cash full node (BCHN) and a solo Stratum v1 pool (ckpool) as a single Umbrel app installation.
 

@@ -160,13 +160,26 @@ function escapeHtml(s) {
 
 async function refresh() {
   try {
-    const node = await fetchJson('/api/node');
+    const res = await fetch('/api/node', { cache: 'no-store' });
+    const node = await res.json().catch(() => ({}));
+    if (!res.ok) throw node;
     const progress = node.verificationprogress || 0;
     const pct = Math.round(progress * 100);
     const ibd = !!node.initialblockdownload;
+    const cached = !!node.cached;
 
-    document.getElementById('sync-text').textContent = ibd ? `Syncing ${pct}%` : `Synchronized ${pct}%`;
-    document.getElementById('sync-subtext').textContent = `${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
+    const lastSeen = Number(node.lastSeen) || 0;
+    const ageS = lastSeen ? Math.max(0, Math.floor(Date.now() / 1000 - lastSeen)) : 0;
+    const ageM = Math.floor(ageS / 60);
+    const ageText = lastSeen ? `Last seen ${ageM}m ago` : 'Last seen unknown';
+
+    if (cached) {
+      document.getElementById('sync-text').textContent = ibd ? `Restarting (sync ${pct}%)` : `Restarting (${pct}%)`;
+      document.getElementById('sync-subtext').textContent = `${ageText} | ${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
+    } else {
+      document.getElementById('sync-text').textContent = ibd ? `Syncing ${pct}%` : `Synchronized ${pct}%`;
+      document.getElementById('sync-subtext').textContent = `${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
+    }
 
     document.getElementById('blocks').textContent = node.blocks ?? '-';
     document.getElementById('headers').textContent = node.headers ?? '-';
@@ -175,14 +188,24 @@ async function refresh() {
     setRing(progress);
 
     const pill = document.getElementById('status-pill');
-    pill.textContent = ibd ? 'Syncing' : 'Running';
-    pill.classList.toggle('axe-pill--ok', !ibd);
-  } catch {
-    document.getElementById('sync-text').textContent = 'Node unavailable';
-    document.getElementById('sync-subtext').textContent = 'Check that BCHN is running.';
+    pill.textContent = cached ? 'Starting' : ibd ? 'Syncing' : 'Running';
+    pill.classList.toggle('axe-pill--ok', !ibd && !cached);
+  } catch (err) {
+    const reindexRequired = Boolean(err && err.reindexRequired);
+    const reindexRequested = Boolean(err && err.reindexRequested);
+
+    if (reindexRequired || reindexRequested) {
+      document.getElementById('sync-text').textContent = reindexRequired ? 'Reindex required' : 'Reindex scheduled';
+      document.getElementById('sync-subtext').textContent = reindexRequired
+        ? 'Node was previously pruned. Restart the app to rebuild the database (chainstate reindex).'
+        : 'Restart the app to rebuild the database (chainstate reindex).';
+    } else {
+      document.getElementById('sync-text').textContent = 'Node unavailable';
+      document.getElementById('sync-subtext').textContent = 'Node is starting (after reboot) or offline.';
+    }
     setRing(0);
     const pill = document.getElementById('status-pill');
-    pill.textContent = 'Offline';
+    pill.textContent = reindexRequired ? 'Reindex' : 'Offline';
     pill.classList.remove('axe-pill--ok');
   }
 
@@ -268,7 +291,7 @@ async function loadSettings() {
   try {
     const s = await fetchJson('/api/settings');
     document.getElementById('network').value = s.network || 'mainnet';
-    document.getElementById('prune').value = s.prune ?? 550;
+    document.getElementById('prune').value = s.prune ?? 0;
     document.getElementById('txindex').value = String(s.txindex ?? 0);
     document.getElementById('settings-status').textContent = '';
   } catch {
@@ -325,6 +348,12 @@ document.getElementById('tab-settings').addEventListener('click', async () => {
   await loadPoolSettings();
 });
 
+document.getElementById('support-jump').addEventListener('click', () => {
+  showTab('settings');
+  const el = document.getElementById('support-section');
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
 document.getElementById('trail').addEventListener('change', async () => {
   localStorage.setItem('bchTrail', document.getElementById('trail').value);
   await refreshCharts();
@@ -341,7 +370,11 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
       txindex: document.getElementById('txindex').value === '1',
     };
     const res = await postJson('/api/settings', body);
-    status.textContent = res.restartRequired ? 'Saved. Restart the app to apply.' : 'Saved.';
+    if (res.reindexRequired) {
+      status.textContent = 'Saved. Restart the app to reindex chainstate (required after switching from pruned to archival).';
+    } else {
+      status.textContent = res.restartRequired ? 'Saved. Restart the app to apply.' : 'Saved.';
+    }
   } catch (err) {
     status.textContent = `Error: ${err.message || err}`;
   }
@@ -366,12 +399,12 @@ document.getElementById('support-form').addEventListener('submit', async (e) => 
   const status = document.getElementById('support-status');
   if (status) status.textContent = 'Sending...';
   try {
-    await postJson('/api/support/ticket', {
+    const res = await postJson('/api/support/ticket', {
       subject: document.getElementById('support-subject').value,
       message: document.getElementById('support-message').value,
       email: document.getElementById('support-email').value,
     });
-    if (status) status.textContent = 'Sent. Thanks!';
+    if (status) status.textContent = res.ticket ? `Sent. Ticket: ${res.ticket}` : 'Sent. Thanks!';
     document.getElementById('support-subject').value = '';
     document.getElementById('support-message').value = '';
   } catch (err) {

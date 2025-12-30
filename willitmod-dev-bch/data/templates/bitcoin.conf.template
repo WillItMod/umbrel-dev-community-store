@@ -1,8 +1,8 @@
 server=1
 txindex=0
 
-# Pruning: enabled by default (recommended for ARM). Set prune=0 for archival.
-prune=550
+# Pruning: disabled by default (archival).
+prune=0
 
 # Network selection (uncomment one, then restart the app):
 # testnet=1
@@ -24,4 +24,3 @@ rpcallowip=192.168.0.0/16
 
 # ZMQ (for pool notifications)
 zmqpubhashblock=tcp://0.0.0.0:${BCH_ZMQ_HASHBLOCK_PORT}
-
