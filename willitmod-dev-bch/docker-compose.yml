@@ -60,7 +60,7 @@ services:
     entrypoint:
       - /bin/sh
       - -ec
-    command: >-
+    command: |-
       extra=""
       if [ -f /data/.reindex-chainstate ]; then
         echo "[axebch] Reindex requested (chainstate)."
@@ -80,7 +80,8 @@ services:
     command: "-k -B -c /config/ckpool.conf"
     user: "1000:1000"
     depends_on:
-      - bchn
+      bchn:
+        condition: service_healthy
     restart: on-failure
     stop_grace_period: 30s
     ports:
@@ -95,8 +96,10 @@ services:
     restart: on-failure
     stop_grace_period: 30s
     depends_on:
-      - bchn
-      - ckpool
+      bchn:
+        condition: service_healthy
+      ckpool:
+        condition: service_started
     volumes:
       - ${APP_DATA_DIR}/data:/data
     environment:
