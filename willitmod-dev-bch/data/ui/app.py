@@ -45,7 +45,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
-APP_VERSION = "0.6.3-alpha"
+APP_VERSION = "0.6.4-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -784,7 +784,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.6.3"
+    server_version = "willitmod-dev-bch/0.6.4"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)
