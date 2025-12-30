@@ -3,9 +3,8 @@ version: "3.7"
 services:
   app_proxy:
     environment:
-      # Use the service name (DNS-safe). Container names like `*_app_1` contain underscores and
-      # can fail to resolve, causing app-proxy to fall back to external DNS.
-      APP_HOST: app
+      # Use a unique DNS alias to avoid collisions on Umbrel's shared Docker network.
+      APP_HOST: axebch-app
       APP_PORT: 3000
 
   init:
@@ -83,6 +82,10 @@ services:
     depends_on:
       - bchn
       - ckpool
+    networks:
+      default:
+        aliases:
+          - axebch-app
     volumes:
       - ${APP_DATA_DIR}/data:/data
     environment:

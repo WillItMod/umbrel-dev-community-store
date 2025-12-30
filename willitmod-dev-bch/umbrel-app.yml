@@ -62,7 +62,7 @@ widgets:
   - id: "sync"
     type: "text-with-progress"
     refresh: "5s"
-    endpoint: "app:3000/api/widget/sync"
+    endpoint: "axebch-app:3000/api/widget/sync"
     link: ""
     example:
       type: "text-with-progress"
@@ -74,7 +74,7 @@ widgets:
   - id: "pool"
     type: "three-stats"
     refresh: "30s"
-    endpoint: "app:3000/api/widget/pool"
+    endpoint: "axebch-app:3000/api/widget/pool"
     link: ""
     example:
       type: "three-stats"
