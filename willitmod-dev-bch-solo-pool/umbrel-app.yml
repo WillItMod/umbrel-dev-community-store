@@ -1,5 +1,5 @@
 manifestVersion: 1.1
-id: willitmod-bch-solo-pool
+id: willitmod-dev-bch-solo-pool
 category: bitcoin
 name: Bitcoin Cash Solo Pool
 version: "0.1.0-dev"
@@ -10,8 +10,8 @@ description: >-
 
   Setup:
     1) Install and fully sync "Bitcoin Cash Node" first.
-    2) In this app, edit `data/config/ckpool.conf` and set the RPC password to match your BCH node's app password.
-    3) Restart this app.
+    2) Open this app and set your BCH node RPC credentials in the web UI.
+    3) Point your miners at the Stratum URL shown in the app.
 
 
   Miner connection:
@@ -28,13 +28,13 @@ website: https://github.com/WillItMod/umbrel-dev-community-store
 repo: https://github.com/WillItMod/umbrel-dev-community-store
 support: https://github.com/WillItMod/umbrel-dev-community-store/issues
 dependencies:
-  - willitmod-bch-node
+  - willitmod-dev-bch-node
 port: 21211
-icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-bch-solo-pool/icon.svg
+icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-solo-pool/icon.svg
 gallery:
-  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-bch-solo-pool/icon.svg
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-solo-pool/icon.svg
 path: ""
-defaultUsername: ""
-defaultPassword: ""
+defaultUsername: "admin"
+deterministicPassword: true
 submitter: WillItMod
 

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BCH Solo Pool</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.4; }
+      code, pre, input { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+      .box { border: 1px solid #333; border-radius: 8px; padding: 16px; max-width: 980px; background: #111; }
+      h1 { margin-top: 0; }
+      ul { margin: 0; padding-left: 18px; }
+      .warn { color: #ffcc66; }
+      .row { display: grid; grid-template-columns: 220px 1fr; gap: 10px; align-items: center; margin: 10px 0; }
+      input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #0b0b0f; color: #fff; }
+      .btn { padding: 10px 14px; border-radius: 10px; border: 1px solid #333; background: #0bb3a3; color: #0b0b0f; font-weight: 800; cursor: pointer; }
+      .muted { color: #aaa; font-size: 14px; }
+      a { color: #8ad; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>Bitcoin Cash (BCH) Solo Pool</h1>
+      <p class="warn"><strong>First-time setup:</strong> enter your BCH node RPC password below. You can find it by opening the BCH Node app and choosing “Show default credentials”.</p>
+
+      <h2>Miner connection</h2>
+      <ul>
+        <li>URL: <code>stratum+tcp://&lt;umbrel-ip&gt;:3333</code></li>
+        <li>Username: <code>&lt;payout-address&gt;[.&lt;worker&gt;]</code> (legacy BCH address is the safest)</li>
+        <li>Password: any value</li>
+      </ul>
+
+      <h2>Pool → Node connection</h2>
+      <p class="muted">This config is stored inside the app and used by ckpool to request work and submit blocks.</p>
+      <form id="cfg">
+        <div class="row"><label for="rpc_host">RPC host</label><input id="rpc_host" name="rpc_host" value="umbrel.local" /></div>
+        <div class="row"><label for="rpc_port">RPC port</label><input id="rpc_port" name="rpc_port" value="28332" /></div>
+        <div class="row"><label for="rpc_user">RPC username</label><input id="rpc_user" name="rpc_user" value="bch" /></div>
+        <div class="row"><label for="rpc_pass">RPC password</label><input id="rpc_pass" name="rpc_pass" type="password" placeholder="Paste BCH node app password" /></div>
+        <div class="row"><label for="zmq_host">ZMQ host</label><input id="zmq_host" name="zmq_host" value="umbrel.local" /></div>
+        <div class="row"><label for="zmq_port">ZMQ hashblock port</label><input id="zmq_port" name="zmq_port" value="28334" /></div>
+        <button class="btn" type="submit">Save config</button>
+        <p class="muted" id="msg"></p>
+      </form>
+
+      <h2>Status files</h2>
+      <ul>
+        <li><a href="/pool/pool.status">/pool/pool.status</a></li>
+        <li><a href="/pool/pool.workers">/pool/pool.workers</a></li>
+      </ul>
+    </div>
+
+    <script>
+      async function loadConfig() {
+        try {
+          const res = await fetch('/api/config');
+          if (!res.ok) return;
+          const cfg = await res.json();
+          if (cfg.rpc_host) document.getElementById('rpc_host').value = cfg.rpc_host;
+          if (cfg.rpc_port) document.getElementById('rpc_port').value = cfg.rpc_port;
+          if (cfg.rpc_user) document.getElementById('rpc_user').value = cfg.rpc_user;
+          if (cfg.zmq_host) document.getElementById('zmq_host').value = cfg.zmq_host;
+          if (cfg.zmq_port) document.getElementById('zmq_port').value = cfg.zmq_port;
+        } catch {}
+      }
+
+      document.getElementById('cfg').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('msg');
+        msg.textContent = 'Saving...';
+        const body = {
+          rpc_host: document.getElementById('rpc_host').value.trim(),
+          rpc_port: document.getElementById('rpc_port').value.trim(),
+          rpc_user: document.getElementById('rpc_user').value.trim(),
+          rpc_pass: document.getElementById('rpc_pass').value,
+          zmq_host: document.getElementById('zmq_host').value.trim(),
+          zmq_port: document.getElementById('zmq_port').value.trim(),
+        };
+        try {
+          const res = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const text = await res.text();
+          msg.textContent = res.ok ? 'Saved. If mining doesn’t start, restart the app.' : `Error: ${text}`;
+        } catch (err) {
+          msg.textContent = 'Error saving config.';
+        }
+      });
+
+      loadConfig();
+    </script>
+  </body>
+</html>
+

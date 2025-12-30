@@ -24,3 +24,4 @@ rpcallowip=192.168.0.0/16
 
 # ZMQ (for solo mining / notifications)
 zmqpubhashblock=tcp://0.0.0.0:${BCH_ZMQ_HASHBLOCK_PORT}
+

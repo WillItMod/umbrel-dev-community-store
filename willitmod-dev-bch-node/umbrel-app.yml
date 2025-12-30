@@ -1,5 +1,5 @@
 manifestVersion: 1.1
-id: willitmod-bch-node
+id: willitmod-dev-bch-node
 category: bitcoin
 name: Bitcoin Cash Node
 version: "0.1.0-dev"
@@ -23,9 +23,9 @@ repo: https://github.com/WillItMod/umbrel-dev-community-store
 support: https://github.com/WillItMod/umbrel-dev-community-store/issues
 dependencies: []
 port: 21210
-icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-bch-node/icon.svg
+icon: https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-node/icon.svg
 gallery:
-  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-bch-node/icon.svg
+  - https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch-node/icon.svg
 path: ""
 defaultUsername: "bch"
 deterministicPassword: true
