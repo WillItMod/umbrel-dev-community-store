@@ -2,7 +2,7 @@ manifestVersion: 1
 id: willitmod-dev-bch
 category: bitcoin
 name: AxeBCH
-version: "0.5.0-alpha"
+version: "0.6.0-alpha"
 tagline: BCH node + solo pool
 description: >-
   Run a Bitcoin Cash full node (BCHN) and a solo Stratum v1 pool (ckpool) as a single Umbrel app installation.
@@ -15,7 +15,7 @@ description: >-
 
   Miner connection:
     - Set your payout address in the app Settings tab.
-    - URL: `stratum+tcp://<your-umbrel-ip>:3333`
+    - URL: `stratum+tcp://<your-umbrel-ip>:4567`
     - Username: worker name (optional)
       Example: `bitaxe-01`
     - Password: anything

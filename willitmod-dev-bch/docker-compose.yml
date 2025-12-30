@@ -69,7 +69,7 @@ services:
     restart: on-failure
     stop_grace_period: 30s
     ports:
-      - "3333:3333/tcp"
+      - "4567:3333/tcp"
     volumes:
       - ${APP_DATA_DIR}/data/pool/config:/config:ro
       - ${APP_DATA_DIR}/data/pool/www:/www
