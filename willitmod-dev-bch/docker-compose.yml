@@ -51,7 +51,7 @@ services:
       - ${APP_DATA_DIR}/data:/data
     environment:
       APPS_SUBNET: "${NETWORK_IP}/16"
-      APP_VERSION: "0.6.2-alpha"
+      APP_VERSION: "0.6.3-alpha"
       UI_SOURCE_BASE: "https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-bch"
       RPC_USER: "bch"
       RPC_PASSWORD: "${APP_PASSWORD}"
