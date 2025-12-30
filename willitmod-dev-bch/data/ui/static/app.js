@@ -343,38 +343,6 @@ document.getElementById('go-pool').addEventListener('click', async () => {
   await refreshCharts();
   await refresh();
 });
-
-function setStatus(el, msg) {
-  if (!el) return;
-  el.textContent = msg || '';
-  if (msg) {
-    clearTimeout(el.__t);
-    el.__t = setTimeout(() => {
-      el.textContent = '';
-    }, 3000);
-  }
-}
-
-async function copyText(text) {
-  if (!text) return false;
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const coffeeCopyBtn = document.getElementById('coffee-copy');
-if (coffeeCopyBtn) {
-  coffeeCopyBtn.addEventListener('click', async () => {
-    const addrEl = document.getElementById('coffee-ln');
-    const statusEl = document.getElementById('coffee-status');
-    const text = addrEl ? addrEl.textContent.trim() : '';
-    const ok = await copyText(text);
-    setStatus(statusEl, ok ? 'Copied Lightning address.' : 'Copy failed. Select and copy manually.');
-  });
-}
 document.getElementById('tab-settings').addEventListener('click', async () => {
   showTab('settings');
   await loadSettings();
