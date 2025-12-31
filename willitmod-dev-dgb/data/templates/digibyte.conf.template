@@ -24,3 +24,16 @@ rpcallowip=192.168.0.0/16
 
 # ZMQ (for pool notifications)
 zmqpubhashblock=tcp://0.0.0.0:${DGB_ZMQ_HASHBLOCK_PORT}
+
+# AxeDGB bootstrap peers (helps early IBD if DNS seeds are flaky)
+# axedgb-seeds-v1
+addnode=5.189.152.60:12024
+addnode=24.97.94.219:12024
+addnode=45.76.249.217:12024
+addnode=47.93.161.68:12024
+addnode=52.45.88.37:12024
+addnode=60.12.123.42:12024
+addnode=66.108.15.5:12024
+addnode=73.156.140.158:12024
+addnode=144.76.103.24:12024
+addnode=184.164.16.141:12024
