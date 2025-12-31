@@ -204,33 +204,6 @@ function showTab(tab) {
   window.__activeTab = which;
 }
 
-function renderWorkersTable(items) {
-  const tbody = document.getElementById('workers-tbody');
-  const meta = document.getElementById('workers-meta');
-  meta.textContent = `${items.length} entries`;
-
-  if (!items.length) {
-    tbody.innerHTML = '<tr><td class="px-4 py-4 text-slate-400" colspan="4">No worker data available yet.</td></tr>';
-    return;
-  }
-
-  const rows = items.slice(0, 50).map((w) => {
-    const worker = w.worker || w.name || w.user || w.username || '-';
-    const last = w.lastshare || w.last_share || w.last || w.lastShare || '';
-    const best = w.bestshare || w.best_share || w.best || '';
-    const note = w.raw ? String(w.raw) : '';
-    return `
-      <tr class="hover:bg-white/5">
-        <td class="px-4 py-3 font-mono">${escapeHtml(String(worker))}</td>
-        <td class="px-4 py-3">${escapeHtml(String(last || '-'))}</td>
-        <td class="px-4 py-3">${escapeHtml(String(best || '-'))}</td>
-        <td class="px-4 py-3 text-slate-400">${escapeHtml(note ? note.slice(0, 120) : '-')}</td>
-      </tr>
-    `;
-  });
-  tbody.innerHTML = rows.join('');
-}
-
 function escapeHtml(s) {
   return s
     .replaceAll('&', '&amp;')
@@ -318,14 +291,6 @@ async function refresh() {
     document.getElementById('bestshare-summary').textContent = '-';
   }
 
-  if (window.__activeTab === 'pool') {
-    try {
-      const workers = await fetchJson('/api/pool/workers');
-      renderWorkersTable((workers && workers.workers) || []);
-    } catch {
-      renderWorkersTable([]);
-    }
-  }
 }
 
 refresh();
