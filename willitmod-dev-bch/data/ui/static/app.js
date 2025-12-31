@@ -435,6 +435,15 @@ async function refresh() {
     if (el6h) el6h.textContent = formatHashrateFromTHS(h['6h']);
     if (el1d) el1d.textContent = formatHashrateFromTHS(h['1d']);
     if (el7d) el7d.textContent = formatHashrateFromTHS(h['7d']);
+
+    const lg1m = document.getElementById('legend-1m');
+    const lg5m = document.getElementById('legend-5m');
+    const lg15m = document.getElementById('legend-15m');
+    const lg1h = document.getElementById('legend-1h');
+    if (lg1m) lg1m.textContent = formatHashrateFromTHS(h['1m']);
+    if (lg5m) lg5m.textContent = formatHashrateFromTHS(h['5m']);
+    if (lg15m) lg15m.textContent = formatHashrateFromTHS(h['15m']);
+    if (lg1h) lg1h.textContent = formatHashrateFromTHS(h['1h']);
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
@@ -445,6 +454,12 @@ async function refresh() {
 
     const ids = ['hashrate-1m', 'hashrate-5m', 'hashrate-15m', 'hashrate-1h', 'hashrate-6h', 'hashrate-1d', 'hashrate-7d'];
     for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
+    }
+
+    const legendIds = ['legend-1m', 'legend-5m', 'legend-15m', 'legend-1h'];
+    for (const id of legendIds) {
       const el = document.getElementById(id);
       if (el) el.textContent = '-';
     }
