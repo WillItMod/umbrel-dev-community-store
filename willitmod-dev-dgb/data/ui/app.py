@@ -45,7 +45,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.1.2-alpha"
+APP_VERSION = "0.1.3-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -349,6 +349,10 @@ def _node_status():
     headers = int(info.get("headers") or blocks)
     progress = float(info.get("verificationprogress") or 0.0)
     ibd = bool(info.get("initialblockdownload", False))
+    try:
+        connections = int(_rpc_call("getconnectioncount") or 0)
+    except Exception:
+        connections = int(net.get("connections") or 0)
 
     status = {
         "chain": info.get("chain"),
@@ -356,7 +360,7 @@ def _node_status():
         "headers": headers,
         "verificationprogress": progress,
         "initialblockdownload": ibd,
-        "connections": int(net.get("connections") or 0),
+        "connections": connections,
         "subversion": str(net.get("subversion") or ""),
         "mempool_bytes": int(mempool.get("bytes") or 0),
     }
@@ -783,7 +787,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-dgb/0.1.2"
+    server_version = "willitmod-dev-dgb/0.1.3"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)

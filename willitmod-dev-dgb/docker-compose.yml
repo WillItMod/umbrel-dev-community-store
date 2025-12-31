@@ -13,7 +13,7 @@ services:
       - ${APP_DATA_DIR}/data:/data
     environment:
       APPS_SUBNET: "${NETWORK_IP}/16"
-      APP_VERSION: "0.1.2-alpha"
+      APP_VERSION: "0.1.3-alpha"
       UI_SOURCE_BASE: "https://raw.githubusercontent.com/WillItMod/umbrel-dev-community-store/main/willitmod-dev-dgb"
       RPC_USER: "dgb"
       RPC_PASSWORD: "${APP_PASSWORD}"
