@@ -114,7 +114,7 @@ async function postJson(url, body) {
 
 const __CASHADDR_RE = /^(?:(?:bitcoincash|bchtest|bchreg):)?[qp][0-9a-z]{41,60}$/i;
 const __LEGACY_BCH_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
-const __CASHADDR_MODAL_DISMISSED_KEY = 'axebch_cashaddr_modal_dismissed_v5';
+const __CASHADDR_MODAL_DISMISSED_KEY = 'axebch_cashaddr_modal_dismissed_v6';
 
 function __getCashaddrModalEls() {
   return {
