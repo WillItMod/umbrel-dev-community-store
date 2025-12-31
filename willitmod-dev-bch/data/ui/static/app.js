@@ -13,6 +13,34 @@ function formatTHS(v) {
   return n.toFixed(1);
 }
 
+function formatHashrateFromTHS(v) {
+  const ths = Number(v);
+  if (!Number.isFinite(ths)) return '-';
+  if (ths === 0) return '0 H/s';
+
+  const abs = Math.abs(ths);
+  // Convert from TH/s into a human unit.
+  const units = [
+    { unit: 'EH/s', scale: 1e6 },
+    { unit: 'PH/s', scale: 1e3 },
+    { unit: 'TH/s', scale: 1 },
+    { unit: 'GH/s', scale: 1e-3 },
+    { unit: 'MH/s', scale: 1e-6 },
+    { unit: 'KH/s', scale: 1e-9 },
+    { unit: 'H/s', scale: 1e-12 },
+  ];
+
+  for (const u of units) {
+    const inUnit = abs / u.scale;
+    if (inUnit >= 1 || u.unit === 'H/s') {
+      const signed = ths / u.scale;
+      const digits = Math.abs(signed) < 10 ? 2 : Math.abs(signed) < 100 ? 1 : 0;
+      return `${signed.toFixed(digits)} ${u.unit}`;
+    }
+  }
+  return `${formatTHS(ths)} TH/s`;
+}
+
 function formatBestShare(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return '-';
@@ -400,13 +428,13 @@ async function refresh() {
     const el6h = document.getElementById('hashrate-6h');
     const el1d = document.getElementById('hashrate-1d');
     const el7d = document.getElementById('hashrate-7d');
-    if (el1m) el1m.textContent = formatTHS(h['1m']);
-    if (el5m) el5m.textContent = formatTHS(h['5m']);
-    if (el15m) el15m.textContent = formatTHS(h['15m']);
-    if (el1h) el1h.textContent = formatTHS(h['1h']);
-    if (el6h) el6h.textContent = formatTHS(h['6h']);
-    if (el1d) el1d.textContent = formatTHS(h['1d']);
-    if (el7d) el7d.textContent = formatTHS(h['7d']);
+    if (el1m) el1m.textContent = formatHashrateFromTHS(h['1m']);
+    if (el5m) el5m.textContent = formatHashrateFromTHS(h['5m']);
+    if (el15m) el15m.textContent = formatHashrateFromTHS(h['15m']);
+    if (el1h) el1h.textContent = formatHashrateFromTHS(h['1h']);
+    if (el6h) el6h.textContent = formatHashrateFromTHS(h['6h']);
+    if (el1d) el1d.textContent = formatHashrateFromTHS(h['1d']);
+    if (el7d) el7d.textContent = formatHashrateFromTHS(h['7d']);
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
