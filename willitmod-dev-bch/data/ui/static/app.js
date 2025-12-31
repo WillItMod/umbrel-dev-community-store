@@ -13,6 +13,27 @@ function formatTHS(v) {
   return n.toFixed(1);
 }
 
+function formatBestShare(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  if (n === 0) return '0';
+  const abs = Math.abs(n);
+  const units = [
+    { s: 'T', v: 1e12 },
+    { s: 'G', v: 1e9 },
+    { s: 'M', v: 1e6 },
+    { s: 'K', v: 1e3 },
+  ];
+  for (const u of units) {
+    if (abs >= u.v) {
+      const scaled = n / u.v;
+      const digits = Math.abs(scaled) < 10 ? 2 : Math.abs(scaled) < 100 ? 1 : 0;
+      return `${scaled.toFixed(digits)}${u.s}`;
+    }
+  }
+  return String(Math.round(n));
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -25,6 +46,94 @@ function setRing(progress) {
   const offset = circumference * (1 - p);
   ring.style.strokeDashoffset = `${offset}`;
   label.textContent = `${Math.round(p * 100)}%`;
+}
+
+function drawSparklineMulti(canvas, series, opts = {}) {
+  const ctx = canvas.getContext('2d');
+  const width = canvas.clientWidth;
+  if (canvas.width !== width) canvas.width = width;
+  const height = canvas.height;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const allValues = [];
+  for (const s of series || []) {
+    for (const p of (s && s.points) || []) {
+      const v = p && typeof p.v === 'number' ? p.v : NaN;
+      if (Number.isFinite(v)) allValues.push(v);
+    }
+  }
+
+  if (!allValues.length) {
+    ctx.fillStyle = 'rgba(148,163,184,0.6)';
+    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace';
+    ctx.fillText('-', 8, 22);
+    return;
+  }
+
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const pad = 10;
+  const span = max - min || 1;
+
+  function x(i, n) {
+    return pad + (i * (canvas.width - pad * 2)) / Math.max(1, n - 1);
+  }
+  function y(v) {
+    return pad + ((max - v) * (canvas.height - pad * 2)) / span;
+  }
+
+  // grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, canvas.height - pad);
+  ctx.lineTo(canvas.width - pad, canvas.height - pad);
+  ctx.stroke();
+
+  // lines
+  ctx.lineWidth = 2;
+  for (const s of series || []) {
+    const points = (s && s.points) || [];
+    if (!points.length) continue;
+    ctx.strokeStyle = s.color || 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < points.length; i++) {
+      const v = points[i] && points[i].v;
+      if (!Number.isFinite(v)) {
+        started = false;
+        continue;
+      }
+      const px = x(i, points.length);
+      const py = y(v);
+      if (!started) {
+        ctx.moveTo(px, py);
+        started = true;
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.stroke();
+
+    // last dot (last finite point)
+    for (let i = points.length - 1; i >= 0; i--) {
+      const v = points[i] && points[i].v;
+      if (!Number.isFinite(v)) continue;
+      ctx.fillStyle = s.color || 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(x(i, points.length), y(v), 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+  }
+
+  // min/max labels
+  ctx.fillStyle = 'rgba(148,163,184,0.65)';
+  ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace';
+  const fmt = opts.format || ((v) => String(v));
+  ctx.fillText(fmt(max), pad, 14);
+  ctx.fillText(fmt(min), pad, canvas.height - 4);
 }
 
 function drawSparkline(canvas, points, opts = {}) {
@@ -278,10 +387,26 @@ async function refresh() {
     const pool = await fetchJson('/api/pool');
     document.getElementById('workers').textContent = pool.workers ?? '-';
     document.getElementById('hashrate').textContent = formatTHS(pool.hashrate_ths);
-    document.getElementById('bestshare').textContent = pool.best_share ?? '-';
+    document.getElementById('bestshare').textContent = formatBestShare(pool.best_share);
     document.getElementById('workers-summary').textContent = pool.workers ?? '-';
     document.getElementById('hashrate-summary').textContent = formatTHS(pool.hashrate_ths);
-    document.getElementById('bestshare-summary').textContent = pool.best_share ?? '-';
+    document.getElementById('bestshare-summary').textContent = formatBestShare(pool.best_share);
+
+    const h = (pool && pool.hashrates_ths) || {};
+    const el1m = document.getElementById('hashrate-1m');
+    const el5m = document.getElementById('hashrate-5m');
+    const el15m = document.getElementById('hashrate-15m');
+    const el1h = document.getElementById('hashrate-1h');
+    const el6h = document.getElementById('hashrate-6h');
+    const el1d = document.getElementById('hashrate-1d');
+    const el7d = document.getElementById('hashrate-7d');
+    if (el1m) el1m.textContent = formatTHS(h['1m']);
+    if (el5m) el5m.textContent = formatTHS(h['5m']);
+    if (el15m) el15m.textContent = formatTHS(h['15m']);
+    if (el1h) el1h.textContent = formatTHS(h['1h']);
+    if (el6h) el6h.textContent = formatTHS(h['6h']);
+    if (el1d) el1d.textContent = formatTHS(h['1d']);
+    if (el7d) el7d.textContent = formatTHS(h['7d']);
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
@@ -289,6 +414,12 @@ async function refresh() {
     document.getElementById('workers-summary').textContent = '-';
     document.getElementById('hashrate-summary').textContent = '-';
     document.getElementById('bestshare-summary').textContent = '-';
+
+    const ids = ['hashrate-1m', 'hashrate-5m', 'hashrate-15m', 'hashrate-1h', 'hashrate-6h', 'hashrate-1d', 'hashrate-7d'];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
+    }
   }
 
 }
@@ -370,12 +501,25 @@ async function refreshCharts() {
     const series = await fetchJson(`/api/timeseries/pool?trail=${encodeURIComponent(trail)}`);
     const points = (series && series.points) || [];
     const workers = points.map((p) => ({ v: Number(p.workers) || 0 }));
-    const hashrate = points.map((p) => ({ v: Number(p.hashrate_ths) || 0 }));
     drawSparkline(document.getElementById('chart-workers'), workers, { format: (v) => String(Math.round(v)) });
-    drawSparkline(document.getElementById('chart-hashrate'), hashrate, { format: (v) => v.toFixed(2) });
+
+    const s1m = points.map((p) => ({ v: Number(p.hashrate_1m_ths) }));
+    const s5m = points.map((p) => ({ v: Number(p.hashrate_5m_ths) }));
+    const s15m = points.map((p) => ({ v: Number(p.hashrate_15m_ths) }));
+    const s1h = points.map((p) => ({ v: Number(p.hashrate_1h_ths) }));
+    drawSparklineMulti(
+      document.getElementById('chart-hashrate'),
+      [
+        { label: '1m', color: '#00e5ff', points: s1m },
+        { label: '5m', color: '#ff2bd6', points: s5m },
+        { label: '15m', color: '#ff9a00', points: s15m },
+        { label: '1h', color: '#22c55e', points: s1h },
+      ],
+      { format: (v) => v.toFixed(2) }
+    );
   } catch {
     drawSparkline(document.getElementById('chart-workers'), []);
-    drawSparkline(document.getElementById('chart-hashrate'), []);
+    drawSparklineMulti(document.getElementById('chart-hashrate'), []);
   }
 }
 

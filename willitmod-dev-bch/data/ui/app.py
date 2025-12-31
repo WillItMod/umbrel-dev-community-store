@@ -47,7 +47,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
-APP_VERSION = "0.7.12-alpha"
+APP_VERSION = "0.7.14-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -1078,13 +1078,36 @@ def _series_sampler(stop_event: threading.Event):
             except Exception:
                 workers_i = 0
 
-            hashrate = status.get("hashrate_ths")
-            try:
-                hashrate_f = float(hashrate)
-            except Exception:
-                hashrate_f = None
+            def to_float(value):
+                if value is None:
+                    return None
+                try:
+                    return float(value)
+                except Exception:
+                    return None
 
-            POOL_SERIES.append({"t": _now_ms(), "workers": workers_i, "hashrate_ths": hashrate_f})
+            hashrates = status.get("hashrates_ths") or {}
+            if not isinstance(hashrates, dict):
+                hashrates = {}
+
+            hashrate_f = to_float(hashrates.get("1m", status.get("hashrate_ths")))
+
+            POOL_SERIES.append(
+                {
+                    "t": _now_ms(),
+                    "workers": workers_i,
+                    # Backward-compatible single-series hashrate (1m best-effort).
+                    "hashrate_ths": hashrate_f,
+                    # ckpool windowed hashrates for multi-line charts.
+                    "hashrate_1m_ths": to_float(hashrates.get("1m")),
+                    "hashrate_5m_ths": to_float(hashrates.get("5m")),
+                    "hashrate_15m_ths": to_float(hashrates.get("15m")),
+                    "hashrate_1h_ths": to_float(hashrates.get("1h")),
+                    "hashrate_6h_ths": to_float(hashrates.get("6h")),
+                    "hashrate_1d_ths": to_float(hashrates.get("1d")),
+                    "hashrate_7d_ths": to_float(hashrates.get("7d")),
+                }
+            )
         except Exception:
             pass
 
