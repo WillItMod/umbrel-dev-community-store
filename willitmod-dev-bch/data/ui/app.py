@@ -46,7 +46,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
-APP_VERSION = "0.7.2-alpha"
+APP_VERSION = "0.7.3-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -474,9 +474,8 @@ def _pool_settings():
 _CASHADDR_RE = re.compile(r"^(?:(?:bitcoincash|bchtest|bchreg):)?(?P<body>[qp][0-9a-z]{41,60})$", re.IGNORECASE)
 _LEGACY_RE = re.compile(r"^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$")
 
-
-_CASHADDR_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 _CASHADDR_HELP_URL = "https://bch.info/en/tools/cashaddr"
+_CASHADDR_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 _CASHADDR_ALPHABET_REV = {c: i for i, c in enumerate(_CASHADDR_ALPHABET)}
 _CASHADDR_POLYMOD_GEN = (
     0x98F2BC8E61,
@@ -606,8 +605,8 @@ def _update_pool_settings(*, payout_address: str):
     conversion_notice = None
     if converted_from_cashaddr:
         conversion_notice = (
-            f"CashAddr detected and converted to legacy format for ckpool compatibility: {addr_legacy}. "
-            f"Converter: {_CASHADDR_HELP_URL}"
+            f"CashAddr detected; converted locally on your Umbrel to legacy format for ckpool compatibility: {addr_legacy}. "
+            f"Reference converter: {_CASHADDR_HELP_URL}"
         )
     try:
         res = _rpc_call("validateaddress", [addr_legacy]) or {}
@@ -628,6 +627,7 @@ def _update_pool_settings(*, payout_address: str):
     conf["validated"] = bool(validated) if validated is not None else False
     if conversion_notice and not validation_warning:
         validation_warning = conversion_notice
+
     if validation_warning:
         conf["validationWarning"] = validation_warning
     else:
@@ -899,7 +899,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.7.2"
+    server_version = "willitmod-dev-bch/0.7.3"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)

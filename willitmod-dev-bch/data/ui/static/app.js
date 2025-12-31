@@ -102,6 +102,89 @@ async function postJson(url, body) {
   return data;
 }
 
+const __CASHADDR_RE = /^(?:(?:bitcoincash|bchtest|bchreg):)?[qp][0-9a-z]{41,60}$/i;
+const __LEGACY_BCH_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
+const __CASHADDR_MODAL_DISMISSED_KEY = 'axebch_cashaddr_modal_dismissed_v1';
+
+function __getCashaddrModalEls() {
+  return {
+    root: document.getElementById('cashaddr-modal'),
+    cashaddr: document.getElementById('cashaddr-modal-cashaddr'),
+    legacy: document.getElementById('cashaddr-modal-legacy'),
+    dontShow: document.getElementById('cashaddr-modal-dontshow'),
+    copy: document.getElementById('cashaddr-modal-copy'),
+    close: document.getElementById('cashaddr-modal-close'),
+  };
+}
+
+async function __copyToClipboard(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  try {
+    await navigator.clipboard.writeText(t);
+    return true;
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {}
+  return false;
+}
+
+function __showCashaddrModal({ cashaddr, legacy }) {
+  try {
+    if (localStorage.getItem(__CASHADDR_MODAL_DISMISSED_KEY) === '1') return;
+  } catch {}
+
+  const els = __getCashaddrModalEls();
+  if (!els.root) return;
+
+  if (els.cashaddr) els.cashaddr.textContent = cashaddr ? String(cashaddr) : '';
+  if (els.legacy) els.legacy.textContent = legacy ? String(legacy) : '';
+
+  if (els.copy) {
+    els.copy.textContent = 'Copy';
+    els.copy.onclick = async () => {
+      const ok = await __copyToClipboard(legacy);
+      if (ok) els.copy.textContent = 'Copied';
+      setTimeout(() => {
+        if (els.copy) els.copy.textContent = 'Copy';
+      }, 1200);
+    };
+  }
+
+  const close = () => {
+    if (els.dontShow && els.dontShow.checked) {
+      try {
+        localStorage.setItem(__CASHADDR_MODAL_DISMISSED_KEY, '1');
+      } catch {}
+    }
+    els.root.classList.add('hidden');
+  };
+
+  if (els.close) els.close.onclick = close;
+  els.root.onclick = (e) => {
+    if (e && e.target === els.root) close();
+  };
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e && e.key === 'Escape' && !els.root.classList.contains('hidden')) close();
+    },
+    { once: true }
+  );
+
+  els.root.classList.remove('hidden');
+}
+
 function showTab(tab) {
   const home = document.getElementById('view-home');
   const pool = document.getElementById('view-pool');
@@ -387,9 +470,22 @@ document.getElementById('pool-settings-form').addEventListener('submit', async (
   if (status) status.textContent = 'Saving...';
   try {
     const payoutAddress = document.getElementById('payoutAddress').value;
+    const payoutTrim = String(payoutAddress || '').trim();
     const res = await postJson('/api/pool/settings', { payoutAddress });
     if (status) status.textContent = res.restartRequired ? 'Saved. Restart the app to apply.' : 'Saved.';
     await loadPoolSettings();
+
+    const inputWasCashaddr = __CASHADDR_RE.test(payoutTrim);
+    if (inputWasCashaddr) {
+      try {
+        const s = await fetchJson('/api/pool/settings');
+        const legacy = (s && s.payoutAddress) || '';
+        const validationWarning = (s && s.validationWarning) || '';
+        if (__LEGACY_BCH_RE.test(String(legacy || '').trim()) && String(validationWarning).includes('CashAddr detected')) {
+          __showCashaddrModal({ cashaddr: payoutTrim, legacy });
+        }
+      } catch {}
+    }
   } catch (err) {
     if (status) status.textContent = `Error: ${err.message || err}`;
   }
