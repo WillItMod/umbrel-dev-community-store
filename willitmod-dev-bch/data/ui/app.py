@@ -46,7 +46,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
-APP_VERSION = "0.7.3-alpha"
+APP_VERSION = "0.7.7-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -98,8 +98,21 @@ def _rpc_call(method: str, params=None):
         headers={"Content-Type": "application/json", "Authorization": f"Basic {auth}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    last_err = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(0.4)
+                continue
+            raise
+    if last_err is not None:
+        raise last_err
     if data.get("error"):
         raise RuntimeError(str(data["error"]))
     return data.get("result")
@@ -638,47 +651,205 @@ def _update_pool_settings(*, payout_address: str):
 
 
 def _read_pool_status_raw():
-    candidates = [
-        CKPOOL_STATUS_DIR / "pool.status",
-        Path("/data/pool/www/pool.status"),
-        Path("/data/pool/www/pool/pool.status"),
-    ]
-    for path in candidates:
-        if path.exists() and path.is_file():
+    def iter_candidates(filename: str):
+        bases = [
+            CKPOOL_STATUS_DIR,
+            Path("/data/pool/www/pool"),
+            Path("/data/pool/www"),
+        ]
+        seen = set()
+        for base in bases:
+            if not isinstance(base, Path):
+                continue
+            for p in [
+                base / filename,
+                base.parent / filename,
+                base / "pool" / filename,
+                base.parent / "pool" / filename,
+            ]:
+                if p in seen:
+                    continue
+                seen.add(p)
+                yield p
             try:
-                return path.read_text(encoding="utf-8", errors="replace").strip()
+                for p in base.glob(f"*/{filename}"):
+                    if p in seen:
+                        continue
+                    seen.add(p)
+                    yield p
             except Exception:
                 continue
-    return ""
+
+    entries = []
+    for path in iter_candidates("pool.status"):
+        if not (path.exists() and path.is_file()):
+            continue
+        try:
+            entries.append((float(path.stat().st_mtime), path.read_text(encoding="utf-8", errors="replace").strip()))
+        except Exception:
+            continue
+
+    if not entries:
+        return ""
+
+    non_empty = [e for e in entries if e[1]]
+    if non_empty:
+        return max(non_empty, key=lambda x: x[0])[1]
+    return max(entries, key=lambda x: x[0])[1]
 
 def _read_pool_workers_raw():
-    candidates = [
-        CKPOOL_STATUS_DIR / "pool.workers",
-        Path("/data/pool/www/pool.workers"),
-        Path("/data/pool/www/pool/pool.workers"),
-    ]
-    for path in candidates:
-        if path.exists() and path.is_file():
+    def iter_candidates(filename: str):
+        bases = [
+            CKPOOL_STATUS_DIR,
+            Path("/data/pool/www/pool"),
+            Path("/data/pool/www"),
+        ]
+        seen = set()
+        for base in bases:
+            if not isinstance(base, Path):
+                continue
+            for p in [
+                base / filename,
+                base.parent / filename,
+                base / "pool" / filename,
+                base.parent / "pool" / filename,
+            ]:
+                if p in seen:
+                    continue
+                seen.add(p)
+                yield p
             try:
-                return path.read_text(encoding="utf-8", errors="replace").strip()
+                for p in base.glob(f"*/{filename}"):
+                    if p in seen:
+                        continue
+                    seen.add(p)
+                    yield p
             except Exception:
                 continue
-    return ""
+
+    entries = []
+    for path in iter_candidates("pool.workers"):
+        if not (path.exists() and path.is_file()):
+            continue
+        try:
+            entries.append((float(path.stat().st_mtime), path.read_text(encoding="utf-8", errors="replace").strip()))
+        except Exception:
+            continue
+
+    if not entries:
+        return ""
+
+    non_empty = [e for e in entries if e[1]]
+    if non_empty:
+        return max(non_empty, key=lambda x: x[0])[1]
+    return max(entries, key=lambda x: x[0])[1]
 
 
 def _parse_pool_status(raw: str):
     if not raw:
         return {"workers": 0, "hashrate_ths": None, "best_share": None}
 
-    try:
-        data = json.loads(raw)
-        return {
-            "workers": int(data.get("workers") or 0),
-            "hashrate_ths": data.get("hashrate"),
-            "best_share": data.get("bestshare") or data.get("best_share"),
+    def to_int(value):
+        try:
+            return int(str(value).strip())
+        except Exception:
+            return 0
+
+    def to_hashrate_ths(value):
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except Exception:
+                return None
+
+        s = str(value).strip()
+        if not s:
+            return None
+        s = s.replace(",", "")
+        # Extract leading float (supports scientific notation).
+        m = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)", s)
+        if not m:
+            return None
+        try:
+            n = float(m.group(1))
+        except Exception:
+            return None
+
+        rest = s[m.end() :].strip().replace("/", " ")
+        # Find unit token like H/KH/MH/GH/TH/PH/EH (case-insensitive).
+        unit_match = re.search(r"(?i)\b([kmgtep]?h)\b", rest)
+        unit = (unit_match.group(1).lower() if unit_match else "").strip()
+
+        # No unit: assume TH/s (historical behavior of this app).
+        if not unit:
+            return n
+
+        scale_to_ths = {
+            "h": 1e-12,
+            "kh": 1e-9,
+            "mh": 1e-6,
+            "gh": 1e-3,
+            "th": 1.0,
+            "ph": 1e3,
+            "eh": 1e6,
         }
+        factor = scale_to_ths.get(unit)
+        if factor is None:
+            return None
+        return n * factor
+
+    def normalize(data: dict):
+        if not isinstance(data, dict):
+            return {"workers": 0, "hashrate_ths": None, "best_share": None}
+        workers = (
+            data.get("workers")
+            or data.get("Users")
+            or data.get("users")
+            or data.get("active_workers")
+            or data.get("activeWorkers")
+        )
+        hashrate = (
+            data.get("hashrate_ths")
+            or data.get("hashrateThs")
+            or data.get("hashrate")
+            or data.get("Hashrate")
+            or data.get("rate")
+        )
+        best_share = data.get("bestshare") or data.get("best_share") or data.get("bestShare") or data.get("best")
+        return {
+            "workers": to_int(workers),
+            "hashrate_ths": to_hashrate_ths(hashrate),
+            "best_share": best_share,
+        }
+
+    # Prefer JSON (ckpool often writes JSON, but can include extra log noise).
+    try:
+        return normalize(_extract_json_obj(raw))
     except Exception:
-        return {"workers": 0, "hashrate_ths": None, "best_share": None}
+        try:
+            start = raw.find("{")
+            if start != -1:
+                return normalize(_extract_json_obj(raw[start:]))
+        except Exception:
+            pass
+
+    # Fallback: parse key/value lines.
+    data = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, val = line.split("=", 1)
+        elif ":" in line:
+            key, val = line.split(":", 1)
+        else:
+            continue
+        data[key.strip()] = val.strip()
+
+    return normalize(data)
 
 def _parse_pool_workers(raw: str):
     if not raw:
@@ -899,7 +1070,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.7.3"
+    server_version = "willitmod-dev-bch/0.7.7"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)

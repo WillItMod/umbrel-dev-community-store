@@ -3,6 +3,16 @@ function bytesToMiB(bytes) {
   return `${Math.max(0, bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
+function formatTHS(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  if (n === 0) return '0';
+  if (Math.abs(n) < 0.01) return n.toFixed(4);
+  if (Math.abs(n) < 1) return n.toFixed(3);
+  if (Math.abs(n) < 10) return n.toFixed(2);
+  return n.toFixed(1);
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -104,7 +114,7 @@ async function postJson(url, body) {
 
 const __CASHADDR_RE = /^(?:(?:bitcoincash|bchtest|bchreg):)?[qp][0-9a-z]{41,60}$/i;
 const __LEGACY_BCH_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
-const __CASHADDR_MODAL_DISMISSED_KEY = 'axebch_cashaddr_modal_dismissed_v1';
+const __CASHADDR_MODAL_DISMISSED_KEY = 'axebch_cashaddr_modal_dismissed_v5';
 
 function __getCashaddrModalEls() {
   return {
@@ -256,8 +266,17 @@ async function refresh() {
     const ageM = Math.floor(ageS / 60);
     const ageText = lastSeen ? `Last seen ${ageM}m ago` : 'Last seen unknown';
 
-    if (cached) {
-      document.getElementById('sync-text').textContent = ibd ? `Restarting (sync ${pct}%)` : `Restarting (${pct}%)`;
+    const cacheFreshS = 180;
+    const cacheOfflineS = 900;
+    const cacheFresh = cached && lastSeen && ageS <= cacheFreshS;
+    const cacheStale = cached && lastSeen && ageS > cacheFreshS && ageS <= cacheOfflineS;
+
+    if (cacheFresh || cacheStale) {
+      const stateText = ibd ? `Syncing ${pct}%` : `Running`;
+      document.getElementById('sync-text').textContent = cacheStale ? `${stateText} (stale)` : stateText;
+      document.getElementById('sync-subtext').textContent = `${ageText} | ${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
+    } else if (cached) {
+      document.getElementById('sync-text').textContent = 'Starting';
       document.getElementById('sync-subtext').textContent = `${ageText} | ${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
     } else {
       document.getElementById('sync-text').textContent = ibd ? `Syncing ${pct}%` : `Synchronized ${pct}%`;
@@ -271,8 +290,9 @@ async function refresh() {
     setRing(progress);
 
     const pill = document.getElementById('status-pill');
-    pill.textContent = cached ? 'Starting' : ibd ? 'Syncing' : 'Running';
-    pill.classList.toggle('axe-pill--ok', !ibd && !cached);
+    const pillText = cached && !(cacheFresh || cacheStale) ? 'Starting' : ibd ? 'Syncing' : 'Running';
+    pill.textContent = pillText;
+    pill.classList.toggle('axe-pill--ok', pillText === 'Running');
   } catch (err) {
     const reindexRequired = Boolean(err && err.reindexRequired);
     const reindexRequested = Boolean(err && err.reindexRequested);
@@ -295,10 +315,10 @@ async function refresh() {
   try {
     const pool = await fetchJson('/api/pool');
     document.getElementById('workers').textContent = pool.workers ?? '-';
-    document.getElementById('hashrate').textContent = pool.hashrate_ths ?? '-';
+    document.getElementById('hashrate').textContent = formatTHS(pool.hashrate_ths);
     document.getElementById('bestshare').textContent = pool.best_share ?? '-';
     document.getElementById('workers-summary').textContent = pool.workers ?? '-';
-    document.getElementById('hashrate-summary').textContent = pool.hashrate_ths ?? '-';
+    document.getElementById('hashrate-summary').textContent = formatTHS(pool.hashrate_ths);
     document.getElementById('bestshare-summary').textContent = pool.best_share ?? '-';
   } catch {
     document.getElementById('workers').textContent = '-';
@@ -471,20 +491,35 @@ document.getElementById('pool-settings-form').addEventListener('submit', async (
   try {
     const payoutAddress = document.getElementById('payoutAddress').value;
     const payoutTrim = String(payoutAddress || '').trim();
+    const inputWasCashaddr = __CASHADDR_RE.test(payoutTrim);
+    const inputWasLegacy = __LEGACY_BCH_RE.test(payoutTrim);
+
     const res = await postJson('/api/pool/settings', { payoutAddress });
     if (status) status.textContent = res.restartRequired ? 'Saved. Restart the app to apply.' : 'Saved.';
     await loadPoolSettings();
 
-    const inputWasCashaddr = __CASHADDR_RE.test(payoutTrim);
-    if (inputWasCashaddr) {
+    const legacyFromRes = String(
+      (res && res.settings && res.settings.payoutAddress ? res.settings.payoutAddress : '') || ''
+    ).trim();
+    const validationWarning = String(
+      (res && res.settings && res.settings.validationWarning ? res.settings.validationWarning : '') || ''
+    );
+    const serverConverted =
+      !inputWasLegacy && __LEGACY_BCH_RE.test(legacyFromRes) && legacyFromRes && legacyFromRes !== payoutTrim;
+    const serverMentionsConversion = /cashaddr/i.test(validationWarning) || /converted/i.test(validationWarning);
+
+    if (inputWasCashaddr || serverConverted || serverMentionsConversion) {
+      let legacy = '';
       try {
-        const s = await fetchJson('/api/pool/settings');
-        const legacy = (s && s.payoutAddress) || '';
-        const validationWarning = (s && s.validationWarning) || '';
-        if (__LEGACY_BCH_RE.test(String(legacy || '').trim()) && String(validationWarning).includes('CashAddr detected')) {
-          __showCashaddrModal({ cashaddr: payoutTrim, legacy });
-        }
+        legacy = legacyFromRes;
       } catch {}
+      if (!legacy) {
+        try {
+          const s = await fetchJson('/api/pool/settings');
+          legacy = String((s && s.payoutAddress) || '').trim();
+        } catch {}
+      }
+      __showCashaddrModal({ cashaddr: payoutTrim, legacy });
     }
   } catch (err) {
     if (status) status.textContent = `Error: ${err.message || err}`;
