@@ -13,6 +13,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 
 
 STATIC_DIR = Path("/data/ui/static")
@@ -66,7 +67,8 @@ def _json(data, status=200):
 
 
 def _read_static(rel_path: str):
-    rel = rel_path.lstrip("/") or "index.html"
+    # Ignore query-string fragments (e.g. /app.js?v=... for cache-busting).
+    rel = urlsplit(rel_path).path.lstrip("/") or "index.html"
     path = (STATIC_DIR / rel).resolve()
     if not str(path).startswith(str(STATIC_DIR.resolve())):
         return 403, b"forbidden", "text/plain; charset=utf-8"
