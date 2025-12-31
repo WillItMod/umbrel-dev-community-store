@@ -1,0 +1,33 @@
+manifestVersion: 1
+id: willitmod-dev-axebench
+category: bitcoin
+name: AxeBench (Dev)
+version: "3.0.2-dev.1"
+tagline: Bitaxe fleet benchmarking and management
+icon: https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/icon.png
+description: >-
+  AxeBench is a web UI for managing and benchmarking supported miners, with fleet-level views,
+  profiles, and automation.
+
+
+  Dev-only note:
+    - This variant uses port 5050 to avoid conflicts on systems where 5000 is already in use (e.g. Synology DSM).
+developer: WillItMod
+website: https://github.com/WillItMod/AxeBench-Release
+support: https://github.com/WillItMod/AxeBench-Release/issues
+dependencies: []
+port: 5050
+gallery:
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/1.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/2.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/3.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/4.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/5.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/6.png
+  - https://raw.githubusercontent.com/WillItMod/umbrel-community-store/main/willitmod-axebench/7.png
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+releaseNotes: >-
+  Dev-only build: switches host port from 5000 to 5050 to avoid conflicts on Synology and similar systems.
+submitter: WillItMod
