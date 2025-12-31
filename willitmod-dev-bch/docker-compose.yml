@@ -11,6 +11,7 @@ services:
     image: alpine:3.22.1
     volumes:
       - ${APP_DATA_DIR}/data:/data
+      - ${APP_DATA_DIR}:/appdata
     environment:
       APPS_SUBNET: "${NETWORK_IP}/16"
       RPC_USER: "bch"
@@ -28,6 +29,10 @@ services:
         apk add --no-cache envsubst curl >/dev/null
 
         mkdir -p /data/node /data/pool/config /data/pool/www/pool /data/pool/www/users /data/templates
+
+        # Umbrel may create settings.yml as root during update/install; ensure it stays writable.
+        touch /appdata/settings.yml
+        chown 1000:1000 /appdata/settings.yml || true
 
         # Cleanup from older broken installs (a directory with the script name).
         if [ -d /data/templates/init-entrypoint.sh ]; then
