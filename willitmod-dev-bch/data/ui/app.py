@@ -47,7 +47,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
-APP_VERSION = "0.7.10-alpha"
+APP_VERSION = "0.7.11-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -780,9 +780,18 @@ def _parse_pool_status(raw: str):
             return None
 
         rest = s[m.end() :].strip().replace("/", " ")
-        # Find unit token like H/KH/MH/GH/TH/PH/EH (case-insensitive).
+        # Find unit token like H/KH/MH/GH/TH/PH/EH, but also handle ckpool's
+        # shorthand like "78.6G" / "8.06T" (no "H").
+        unit = ""
         unit_match = re.search(r"(?i)\b([kmgtep]?h)\b", rest)
-        unit = (unit_match.group(1).lower() if unit_match else "").strip()
+        if unit_match:
+            unit = unit_match.group(1).lower().strip()
+        else:
+            shorthand = re.search(r"(?i)\b([kmgtep])\b", rest)
+            if shorthand:
+                unit = f"{shorthand.group(1).lower()}h"
+            elif re.search(r"(?i)\bh\b", rest):
+                unit = "h"
 
         # No unit: assume TH/s (historical behavior of this app).
         if not unit:
@@ -807,11 +816,28 @@ def _parse_pool_status(raw: str):
             return {"workers": 0, "hashrate_ths": None, "best_share": None}
         workers = (
             data.get("workers")
+            or data.get("Workers")
             or data.get("Users")
             or data.get("users")
             or data.get("active_workers")
             or data.get("activeWorkers")
         )
+
+        hashrates_raw = {
+            "1m": data.get("hashrate1m"),
+            "5m": data.get("hashrate5m"),
+            "15m": data.get("hashrate15m"),
+            "1h": data.get("hashrate1hr") or data.get("hashrate1h"),
+            "6h": data.get("hashrate6hr") or data.get("hashrate6h"),
+            "1d": data.get("hashrate1d"),
+            "7d": data.get("hashrate7d"),
+        }
+        hashrates_ths = {}
+        for k, v in hashrates_raw.items():
+            if v is None or (isinstance(v, str) and not v.strip()):
+                continue
+            hashrates_ths[k] = to_hashrate_ths(v)
+
         hashrate = (
             data.get("hashrate_ths")
             or data.get("hashrateThs")
@@ -819,12 +845,41 @@ def _parse_pool_status(raw: str):
             or data.get("Hashrate")
             or data.get("rate")
         )
+        if hashrate is None:
+            for k in ["1m", "5m", "15m", "1h", "6h", "1d", "7d"]:
+                if k in hashrates_raw and hashrates_raw[k] is not None:
+                    hashrate = hashrates_raw[k]
+                    break
+
         best_share = data.get("bestshare") or data.get("best_share") or data.get("bestShare") or data.get("best")
         return {
             "workers": to_int(workers),
             "hashrate_ths": to_hashrate_ths(hashrate),
             "best_share": best_share,
+            "hashrates_ths": hashrates_ths or None,
         }
+
+    def merge_json_objects(text: str) -> dict | None:
+        merged = {}
+        found = False
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if not (line.startswith("{") and line.endswith("}")):
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict):
+                merged.update(obj)
+                found = True
+        return merged if found else None
+
+    merged = merge_json_objects(raw)
+    if merged is not None:
+        return normalize(merged)
 
     # Prefer JSON (ckpool often writes JSON, but can include extra log noise).
     try:
