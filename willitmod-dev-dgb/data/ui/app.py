@@ -12,9 +12,11 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 
 
-STATIC_DIR = Path("/data/ui/static")
+_DEFAULT_STATIC_DIR = "/app/static" if Path("/app/static").exists() else "/data/ui/static"
+STATIC_DIR = Path(os.getenv("STATIC_DIR", _DEFAULT_STATIC_DIR))
 CKPOOL_STATUS_DIR = Path(os.getenv("CKPOOL_STATUS_DIR", "/data/pool/www/pool"))
 CKPOOL_CONF_PATH = Path(os.getenv("CKPOOL_CONF_PATH", "/data/pool/config/ckpool.conf"))
 NODE_CONF_PATH = Path("/data/node/digibyte.conf")
@@ -25,7 +27,7 @@ POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
 INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
 CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
-CKPOOL_FALLBACK_DONATION_ADDRESS = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e"
+CKPOOL_PLACEHOLDER_PAYOUT_ADDRESS = "CHANGEME_DGB_PAYOUT_ADDRESS"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 DGB_IMAGE = os.getenv("DGB_IMAGE", "").strip()
@@ -45,7 +47,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.1.5-alpha"
+APP_VERSION = "0.7.20-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -65,7 +67,8 @@ def _json(data, status=200):
 
 
 def _read_static(rel_path: str):
-    rel = rel_path.lstrip("/") or "index.html"
+    # Ignore query-string fragments (e.g. /app.js?v=... for cache-busting).
+    rel = urlsplit(rel_path).path.lstrip("/") or "index.html"
     path = (STATIC_DIR / rel).resolve()
     if not str(path).startswith(str(STATIC_DIR.resolve())):
         return 403, b"forbidden", "text/plain; charset=utf-8"
@@ -97,8 +100,21 @@ def _rpc_call(method: str, params=None):
         headers={"Content-Type": "application/json", "Authorization": f"Basic {auth}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    last_err = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(0.4)
+                continue
+            raise
+    if last_err is not None:
+        raise last_err
     if data.get("error"):
         raise RuntimeError(str(data["error"]))
     return data.get("result")
@@ -324,7 +340,7 @@ def _build_support_bundle_zip(payload: dict) -> tuple[bytes, str]:
         zf.writestr("ticket.json", json.dumps(payload, indent=2, sort_keys=True))
         zf.writestr("about.json", json.dumps(_about(), indent=2, sort_keys=True))
         zf.writestr("settings.json", json.dumps(_current_settings(), indent=2, sort_keys=True))
-    name = f"axebch-support-{int(time.time())}.zip"
+    name = f"axedgb-support-{int(time.time())}.zip"
     return bio.getvalue(), name
 
 
@@ -349,10 +365,6 @@ def _node_status():
     headers = int(info.get("headers") or blocks)
     progress = float(info.get("verificationprogress") or 0.0)
     ibd = bool(info.get("initialblockdownload", False))
-    try:
-        connections = int(_rpc_call("getconnectioncount") or 0)
-    except Exception:
-        connections = int(net.get("connections") or 0)
 
     status = {
         "chain": info.get("chain"),
@@ -360,7 +372,7 @@ def _node_status():
         "headers": headers,
         "verificationprogress": progress,
         "initialblockdownload": ibd,
-        "connections": connections,
+        "connections": int(net.get("connections") or 0),
         "subversion": str(net.get("subversion") or ""),
         "mempool_bytes": int(mempool.get("bytes") or 0),
     }
@@ -451,10 +463,7 @@ def _pool_settings():
         conf_addr = ""
 
     payout_address = conf_addr
-    configured = bool(payout_address) and payout_address not in [
-        CKPOOL_FALLBACK_DONATION_ADDRESS,
-        "CHANGEME_DGB_PAYOUT_ADDRESS",
-    ]
+    configured = bool(payout_address) and payout_address != CKPOOL_PLACEHOLDER_PAYOUT_ADDRESS
 
     if not isinstance(validation_warning, str):
         validation_warning = None
@@ -474,44 +483,25 @@ def _pool_settings():
     }
 
 
-_DGB_BECH32_RE = re.compile(r"^(?:(?:dgb|tdgb|rdgb)1)[0-9a-z]{11,71}$", re.IGNORECASE)
-_DGB_BASE58_RE = re.compile(r"^[DS][a-km-zA-HJ-NP-Z1-9]{25,34}$")
-
-
-def _normalize_dgb_address(addr: str) -> str:
-    a = (addr or "").strip()
-    if _DGB_BECH32_RE.match(a):
-        return a.lower()
-    return a
-
-
-def _looks_like_dgb_address(addr: str) -> bool:
-    a = (addr or "").strip()
-    return bool(_DGB_BECH32_RE.match(a) or _DGB_BASE58_RE.match(a))
-
-
 def _update_pool_settings(*, payout_address: str):
-    addr_raw = payout_address.strip()
-    if not addr_raw:
+    addr = payout_address.strip()
+    if not addr:
         raise ValueError("payoutAddress is required")
-
-    if not _looks_like_dgb_address(addr_raw):
-        raise ValueError("payoutAddress must be a valid DigiByte address (D/S... or dgb1...)")
-
-    addr = _normalize_dgb_address(addr_raw)
 
     validated = None
     validation_warning = None
     try:
         res = _rpc_call("validateaddress", [addr]) or {}
-        validated = bool(res.get("isvalid"))
-        if not validated:
-            raise ValueError("payoutAddress is not a valid DigiByte address")
     except Exception:
-        validated = False
+        res = None
+        validated = None
         validation_warning = (
             "Node RPC unavailable; saved without RPC validation. Double-check your address, then restart the app."
         )
+    else:
+        validated = bool(res.get("isvalid")) if isinstance(res, dict) else False
+        if not validated:
+            raise ValueError("payoutAddress is not a valid DigiByte address")
 
     conf = _read_ckpool_conf()
     conf["btcaddress"] = addr
@@ -526,47 +516,260 @@ def _update_pool_settings(*, payout_address: str):
 
 
 def _read_pool_status_raw():
-    candidates = [
-        CKPOOL_STATUS_DIR / "pool.status",
-        Path("/data/pool/www/pool.status"),
-        Path("/data/pool/www/pool/pool.status"),
-    ]
-    for path in candidates:
-        if path.exists() and path.is_file():
+    def iter_candidates(filename: str):
+        bases = [
+            CKPOOL_STATUS_DIR,
+            Path("/data/pool/www/pool"),
+            Path("/data/pool/www"),
+        ]
+        seen = set()
+        for base in bases:
+            if not isinstance(base, Path):
+                continue
+            for p in [
+                base / filename,
+                base.parent / filename,
+                base / "pool" / filename,
+                base.parent / "pool" / filename,
+            ]:
+                if p in seen:
+                    continue
+                seen.add(p)
+                yield p
             try:
-                return path.read_text(encoding="utf-8", errors="replace").strip()
+                for p in base.glob(f"*/{filename}"):
+                    if p in seen:
+                        continue
+                    seen.add(p)
+                    yield p
             except Exception:
                 continue
-    return ""
+
+    entries = []
+    for path in iter_candidates("pool.status"):
+        if not (path.exists() and path.is_file()):
+            continue
+        try:
+            entries.append((float(path.stat().st_mtime), path.read_text(encoding="utf-8", errors="replace").strip()))
+        except Exception:
+            continue
+
+    if not entries:
+        return ""
+
+    non_empty = [e for e in entries if e[1]]
+    if non_empty:
+        return max(non_empty, key=lambda x: x[0])[1]
+    return max(entries, key=lambda x: x[0])[1]
 
 def _read_pool_workers_raw():
-    candidates = [
-        CKPOOL_STATUS_DIR / "pool.workers",
-        Path("/data/pool/www/pool.workers"),
-        Path("/data/pool/www/pool/pool.workers"),
-    ]
-    for path in candidates:
-        if path.exists() and path.is_file():
+    def iter_candidates(filename: str):
+        bases = [
+            CKPOOL_STATUS_DIR,
+            Path("/data/pool/www/pool"),
+            Path("/data/pool/www"),
+        ]
+        seen = set()
+        for base in bases:
+            if not isinstance(base, Path):
+                continue
+            for p in [
+                base / filename,
+                base.parent / filename,
+                base / "pool" / filename,
+                base.parent / "pool" / filename,
+            ]:
+                if p in seen:
+                    continue
+                seen.add(p)
+                yield p
             try:
-                return path.read_text(encoding="utf-8", errors="replace").strip()
+                for p in base.glob(f"*/{filename}"):
+                    if p in seen:
+                        continue
+                    seen.add(p)
+                    yield p
             except Exception:
                 continue
-    return ""
+
+    entries = []
+    for path in iter_candidates("pool.workers"):
+        if not (path.exists() and path.is_file()):
+            continue
+        try:
+            entries.append((float(path.stat().st_mtime), path.read_text(encoding="utf-8", errors="replace").strip()))
+        except Exception:
+            continue
+
+    if not entries:
+        return ""
+
+    non_empty = [e for e in entries if e[1]]
+    if non_empty:
+        return max(non_empty, key=lambda x: x[0])[1]
+    return max(entries, key=lambda x: x[0])[1]
 
 
 def _parse_pool_status(raw: str):
     if not raw:
         return {"workers": 0, "hashrate_ths": None, "best_share": None}
 
-    try:
-        data = json.loads(raw)
-        return {
-            "workers": int(data.get("workers") or 0),
-            "hashrate_ths": data.get("hashrate"),
-            "best_share": data.get("bestshare") or data.get("best_share"),
+    def to_int(value):
+        try:
+            return int(str(value).strip())
+        except Exception:
+            return 0
+
+    def to_hashrate_ths(value):
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except Exception:
+                return None
+
+        s = str(value).strip()
+        if not s:
+            return None
+        s = s.replace(",", "")
+        # Extract leading float (supports scientific notation).
+        m = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)", s)
+        if not m:
+            return None
+        try:
+            n = float(m.group(1))
+        except Exception:
+            return None
+
+        rest = s[m.end() :].strip().replace("/", " ")
+        # Find unit token like H/KH/MH/GH/TH/PH/EH, but also handle ckpool's
+        # shorthand like "78.6G" / "8.06T" (no "H").
+        unit = ""
+        unit_match = re.search(r"(?i)\b([kmgtep]?h)\b", rest)
+        if unit_match:
+            unit = unit_match.group(1).lower().strip()
+        else:
+            shorthand = re.search(r"(?i)\b([kmgtep])\b", rest)
+            if shorthand:
+                unit = f"{shorthand.group(1).lower()}h"
+            elif re.search(r"(?i)\bh\b", rest):
+                unit = "h"
+
+        # No unit: assume TH/s (historical behavior of this app).
+        if not unit:
+            return n
+
+        scale_to_ths = {
+            "h": 1e-12,
+            "kh": 1e-9,
+            "mh": 1e-6,
+            "gh": 1e-3,
+            "th": 1.0,
+            "ph": 1e3,
+            "eh": 1e6,
         }
+        factor = scale_to_ths.get(unit)
+        if factor is None:
+            return None
+        return n * factor
+
+    def normalize(data: dict):
+        if not isinstance(data, dict):
+            return {"workers": 0, "hashrate_ths": None, "best_share": None}
+        workers = (
+            data.get("workers")
+            or data.get("Workers")
+            or data.get("Users")
+            or data.get("users")
+            or data.get("active_workers")
+            or data.get("activeWorkers")
+        )
+
+        hashrates_raw = {
+            "1m": data.get("hashrate1m"),
+            "5m": data.get("hashrate5m"),
+            "15m": data.get("hashrate15m"),
+            "1h": data.get("hashrate1hr") or data.get("hashrate1h"),
+            "6h": data.get("hashrate6hr") or data.get("hashrate6h"),
+            "1d": data.get("hashrate1d"),
+            "7d": data.get("hashrate7d"),
+        }
+        hashrates_ths = {}
+        for k, v in hashrates_raw.items():
+            if v is None or (isinstance(v, str) and not v.strip()):
+                continue
+            hashrates_ths[k] = to_hashrate_ths(v)
+
+        hashrate = (
+            data.get("hashrate_ths")
+            or data.get("hashrateThs")
+            or data.get("hashrate")
+            or data.get("Hashrate")
+            or data.get("rate")
+        )
+        if hashrate is None:
+            for k in ["1m", "5m", "15m", "1h", "6h", "1d", "7d"]:
+                if k in hashrates_raw and hashrates_raw[k] is not None:
+                    hashrate = hashrates_raw[k]
+                    break
+
+        best_share = data.get("bestshare") or data.get("best_share") or data.get("bestShare") or data.get("best")
+        return {
+            "workers": to_int(workers),
+            "hashrate_ths": to_hashrate_ths(hashrate),
+            "best_share": best_share,
+            "hashrates_ths": hashrates_ths or None,
+        }
+
+    def merge_json_objects(text: str) -> dict | None:
+        merged = {}
+        found = False
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if not (line.startswith("{") and line.endswith("}")):
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict):
+                merged.update(obj)
+                found = True
+        return merged if found else None
+
+    merged = merge_json_objects(raw)
+    if merged is not None:
+        return normalize(merged)
+
+    # Prefer JSON (ckpool often writes JSON, but can include extra log noise).
+    try:
+        return normalize(_extract_json_obj(raw))
     except Exception:
-        return {"workers": 0, "hashrate_ths": None, "best_share": None}
+        try:
+            start = raw.find("{")
+            if start != -1:
+                return normalize(_extract_json_obj(raw[start:]))
+        except Exception:
+            pass
+
+    # Fallback: parse key/value lines.
+    data = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, val = line.split("=", 1)
+        elif ":" in line:
+            key, val = line.split(":", 1)
+        else:
+            continue
+        data[key.strip()] = val.strip()
+
+    return normalize(data)
 
 def _parse_pool_workers(raw: str):
     if not raw:
@@ -738,13 +941,36 @@ def _series_sampler(stop_event: threading.Event):
             except Exception:
                 workers_i = 0
 
-            hashrate = status.get("hashrate_ths")
-            try:
-                hashrate_f = float(hashrate)
-            except Exception:
-                hashrate_f = None
+            def to_float(value):
+                if value is None:
+                    return None
+                try:
+                    return float(value)
+                except Exception:
+                    return None
 
-            POOL_SERIES.append({"t": _now_ms(), "workers": workers_i, "hashrate_ths": hashrate_f})
+            hashrates = status.get("hashrates_ths") or {}
+            if not isinstance(hashrates, dict):
+                hashrates = {}
+
+            hashrate_f = to_float(hashrates.get("1m", status.get("hashrate_ths")))
+
+            POOL_SERIES.append(
+                {
+                    "t": _now_ms(),
+                    "workers": workers_i,
+                    # Backward-compatible single-series hashrate (1m best-effort).
+                    "hashrate_ths": hashrate_f,
+                    # ckpool windowed hashrates for multi-line charts.
+                    "hashrate_1m_ths": to_float(hashrates.get("1m")),
+                    "hashrate_5m_ths": to_float(hashrates.get("5m")),
+                    "hashrate_15m_ths": to_float(hashrates.get("15m")),
+                    "hashrate_1h_ths": to_float(hashrates.get("1h")),
+                    "hashrate_6h_ths": to_float(hashrates.get("6h")),
+                    "hashrate_1d_ths": to_float(hashrates.get("1d")),
+                    "hashrate_7d_ths": to_float(hashrates.get("7d")),
+                }
+            )
         except Exception:
             pass
 
@@ -787,7 +1013,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-dgb/0.1.5"
+    server_version = f"{APP_ID}/{APP_VERSION}"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)

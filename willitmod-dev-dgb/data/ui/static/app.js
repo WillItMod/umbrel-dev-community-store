@@ -3,6 +3,65 @@ function bytesToMiB(bytes) {
   return `${Math.max(0, bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
+function formatTHS(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  if (n === 0) return '0';
+  if (Math.abs(n) < 0.01) return n.toFixed(4);
+  if (Math.abs(n) < 1) return n.toFixed(3);
+  if (Math.abs(n) < 10) return n.toFixed(2);
+  return n.toFixed(1);
+}
+
+function formatHashrateFromTHS(v) {
+  const ths = Number(v);
+  if (!Number.isFinite(ths)) return '-';
+  if (ths === 0) return '0 H/s';
+
+  const abs = Math.abs(ths);
+  // Convert from TH/s into a human unit.
+  const units = [
+    { unit: 'EH/s', scale: 1e6 },
+    { unit: 'PH/s', scale: 1e3 },
+    { unit: 'TH/s', scale: 1 },
+    { unit: 'GH/s', scale: 1e-3 },
+    { unit: 'MH/s', scale: 1e-6 },
+    { unit: 'KH/s', scale: 1e-9 },
+    { unit: 'H/s', scale: 1e-12 },
+  ];
+
+  for (const u of units) {
+    const inUnit = abs / u.scale;
+    if (inUnit >= 1 || u.unit === 'H/s') {
+      const signed = ths / u.scale;
+      const digits = Math.abs(signed) < 10 ? 2 : Math.abs(signed) < 100 ? 1 : 0;
+      return `${signed.toFixed(digits)} ${u.unit}`;
+    }
+  }
+  return `${formatTHS(ths)} TH/s`;
+}
+
+function formatBestShare(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  if (n === 0) return '0';
+  const abs = Math.abs(n);
+  const units = [
+    { s: 'T', v: 1e12 },
+    { s: 'G', v: 1e9 },
+    { s: 'M', v: 1e6 },
+    { s: 'K', v: 1e3 },
+  ];
+  for (const u of units) {
+    if (abs >= u.v) {
+      const scaled = n / u.v;
+      const digits = Math.abs(scaled) < 10 ? 2 : Math.abs(scaled) < 100 ? 1 : 0;
+      return `${scaled.toFixed(digits)}${u.s}`;
+    }
+  }
+  return String(Math.round(n));
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -15,6 +74,94 @@ function setRing(progress) {
   const offset = circumference * (1 - p);
   ring.style.strokeDashoffset = `${offset}`;
   label.textContent = `${Math.round(p * 100)}%`;
+}
+
+function drawSparklineMulti(canvas, series, opts = {}) {
+  const ctx = canvas.getContext('2d');
+  const width = canvas.clientWidth;
+  if (canvas.width !== width) canvas.width = width;
+  const height = canvas.height;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const allValues = [];
+  for (const s of series || []) {
+    for (const p of (s && s.points) || []) {
+      const v = p && typeof p.v === 'number' ? p.v : NaN;
+      if (Number.isFinite(v)) allValues.push(v);
+    }
+  }
+
+  if (!allValues.length) {
+    ctx.fillStyle = 'rgba(148,163,184,0.6)';
+    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace';
+    ctx.fillText('-', 8, 22);
+    return;
+  }
+
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const pad = 10;
+  const span = max - min || 1;
+
+  function x(i, n) {
+    return pad + (i * (canvas.width - pad * 2)) / Math.max(1, n - 1);
+  }
+  function y(v) {
+    return pad + ((max - v) * (canvas.height - pad * 2)) / span;
+  }
+
+  // grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, canvas.height - pad);
+  ctx.lineTo(canvas.width - pad, canvas.height - pad);
+  ctx.stroke();
+
+  // lines
+  ctx.lineWidth = 2;
+  for (const s of series || []) {
+    const points = (s && s.points) || [];
+    if (!points.length) continue;
+    ctx.strokeStyle = s.color || 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < points.length; i++) {
+      const v = points[i] && points[i].v;
+      if (!Number.isFinite(v)) {
+        started = false;
+        continue;
+      }
+      const px = x(i, points.length);
+      const py = y(v);
+      if (!started) {
+        ctx.moveTo(px, py);
+        started = true;
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.stroke();
+
+    // last dot (last finite point)
+    for (let i = points.length - 1; i >= 0; i--) {
+      const v = points[i] && points[i].v;
+      if (!Number.isFinite(v)) continue;
+      ctx.fillStyle = s.color || 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(x(i, points.length), y(v), 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+  }
+
+  // min/max labels
+  ctx.fillStyle = 'rgba(148,163,184,0.65)';
+  ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace';
+  const fmt = opts.format || ((v) => String(v));
+  ctx.fillText(fmt(max), pad, 14);
+  ctx.fillText(fmt(min), pad, canvas.height - 4);
 }
 
 function drawSparkline(canvas, points, opts = {}) {
@@ -122,33 +269,6 @@ function showTab(tab) {
   window.__activeTab = which;
 }
 
-function renderWorkersTable(items) {
-  const tbody = document.getElementById('workers-tbody');
-  const meta = document.getElementById('workers-meta');
-  meta.textContent = `${items.length} entries`;
-
-  if (!items.length) {
-    tbody.innerHTML = '<tr><td class="px-4 py-4 text-slate-400" colspan="4">No worker data available yet.</td></tr>';
-    return;
-  }
-
-  const rows = items.slice(0, 50).map((w) => {
-    const worker = w.worker || w.name || w.user || w.username || '-';
-    const last = w.lastshare || w.last_share || w.last || w.lastShare || '';
-    const best = w.bestshare || w.best_share || w.best || '';
-    const note = w.raw ? String(w.raw) : '';
-    return `
-      <tr class="hover:bg-white/5">
-        <td class="px-4 py-3 font-mono">${escapeHtml(String(worker))}</td>
-        <td class="px-4 py-3">${escapeHtml(String(last || '-'))}</td>
-        <td class="px-4 py-3">${escapeHtml(String(best || '-'))}</td>
-        <td class="px-4 py-3 text-slate-400">${escapeHtml(note ? note.slice(0, 120) : '-')}</td>
-      </tr>
-    `;
-  });
-  tbody.innerHTML = rows.join('');
-}
-
 function escapeHtml(s) {
   return s
     .replaceAll('&', '&amp;')
@@ -173,8 +293,17 @@ async function refresh() {
     const ageM = Math.floor(ageS / 60);
     const ageText = lastSeen ? `Last seen ${ageM}m ago` : 'Last seen unknown';
 
-    if (cached) {
-      document.getElementById('sync-text').textContent = ibd ? `Restarting (sync ${pct}%)` : `Restarting (${pct}%)`;
+    const cacheFreshS = 180;
+    const cacheOfflineS = 900;
+    const cacheFresh = cached && lastSeen && ageS <= cacheFreshS;
+    const cacheStale = cached && lastSeen && ageS > cacheFreshS && ageS <= cacheOfflineS;
+
+    if (cacheFresh || cacheStale) {
+      const stateText = ibd ? `Syncing ${pct}%` : `Running`;
+      document.getElementById('sync-text').textContent = cacheStale ? `${stateText} (stale)` : stateText;
+      document.getElementById('sync-subtext').textContent = `${ageText} | ${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
+    } else if (cached) {
+      document.getElementById('sync-text').textContent = 'Starting';
       document.getElementById('sync-subtext').textContent = `${ageText} | ${node.chain ?? '-'} | ${node.subversion ?? ''}`.trim();
     } else {
       document.getElementById('sync-text').textContent = ibd ? `Syncing ${pct}%` : `Synchronized ${pct}%`;
@@ -188,8 +317,9 @@ async function refresh() {
     setRing(progress);
 
     const pill = document.getElementById('status-pill');
-    pill.textContent = cached ? 'Starting' : ibd ? 'Syncing' : 'Running';
-    pill.classList.toggle('axe-pill--ok', !ibd && !cached);
+    const pillText = cached && !(cacheFresh || cacheStale) ? 'Starting' : ibd ? 'Syncing' : 'Running';
+    pill.textContent = pillText;
+    pill.classList.toggle('axe-pill--ok', pillText === 'Running');
   } catch (err) {
     const reindexRequired = Boolean(err && err.reindexRequired);
     const reindexRequested = Boolean(err && err.reindexRequested);
@@ -212,11 +342,36 @@ async function refresh() {
   try {
     const pool = await fetchJson('/api/pool');
     document.getElementById('workers').textContent = pool.workers ?? '-';
-    document.getElementById('hashrate').textContent = pool.hashrate_ths ?? '-';
-    document.getElementById('bestshare').textContent = pool.best_share ?? '-';
+    document.getElementById('hashrate').textContent = formatTHS(pool.hashrate_ths);
+    document.getElementById('bestshare').textContent = formatBestShare(pool.best_share);
     document.getElementById('workers-summary').textContent = pool.workers ?? '-';
-    document.getElementById('hashrate-summary').textContent = pool.hashrate_ths ?? '-';
-    document.getElementById('bestshare-summary').textContent = pool.best_share ?? '-';
+    document.getElementById('hashrate-summary').textContent = formatTHS(pool.hashrate_ths);
+    document.getElementById('bestshare-summary').textContent = formatBestShare(pool.best_share);
+
+    const h = (pool && pool.hashrates_ths) || {};
+    const el1m = document.getElementById('hashrate-1m');
+    const el5m = document.getElementById('hashrate-5m');
+    const el15m = document.getElementById('hashrate-15m');
+    const el1h = document.getElementById('hashrate-1h');
+    const el6h = document.getElementById('hashrate-6h');
+    const el1d = document.getElementById('hashrate-1d');
+    const el7d = document.getElementById('hashrate-7d');
+    if (el1m) el1m.textContent = formatHashrateFromTHS(h['1m']);
+    if (el5m) el5m.textContent = formatHashrateFromTHS(h['5m']);
+    if (el15m) el15m.textContent = formatHashrateFromTHS(h['15m']);
+    if (el1h) el1h.textContent = formatHashrateFromTHS(h['1h']);
+    if (el6h) el6h.textContent = formatHashrateFromTHS(h['6h']);
+    if (el1d) el1d.textContent = formatHashrateFromTHS(h['1d']);
+    if (el7d) el7d.textContent = formatHashrateFromTHS(h['7d']);
+
+    const lg1m = document.getElementById('legend-1m');
+    const lg5m = document.getElementById('legend-5m');
+    const lg15m = document.getElementById('legend-15m');
+    const lg1h = document.getElementById('legend-1h');
+    if (lg1m) lg1m.textContent = formatHashrateFromTHS(h['1m']);
+    if (lg5m) lg5m.textContent = formatHashrateFromTHS(h['5m']);
+    if (lg15m) lg15m.textContent = formatHashrateFromTHS(h['15m']);
+    if (lg1h) lg1h.textContent = formatHashrateFromTHS(h['1h']);
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
@@ -224,16 +379,20 @@ async function refresh() {
     document.getElementById('workers-summary').textContent = '-';
     document.getElementById('hashrate-summary').textContent = '-';
     document.getElementById('bestshare-summary').textContent = '-';
-  }
 
-  if (window.__activeTab === 'pool') {
-    try {
-      const workers = await fetchJson('/api/pool/workers');
-      renderWorkersTable((workers && workers.workers) || []);
-    } catch {
-      renderWorkersTable([]);
+    const ids = ['hashrate-1m', 'hashrate-5m', 'hashrate-15m', 'hashrate-1h', 'hashrate-6h', 'hashrate-1d', 'hashrate-7d'];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
+    }
+
+    const legendIds = ['legend-1m', 'legend-5m', 'legend-15m', 'legend-1h'];
+    for (const id of legendIds) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
     }
   }
+
 }
 
 refresh();
@@ -282,7 +441,7 @@ async function loadBackendInfo() {
     const dgbd = shortenImageRef(about.images && about.images.dgbd);
     const ckpool = shortenImageRef(about.images && about.images.ckpool);
     const channel = about.channel ? ` | ${about.channel}` : '';
-    el.textContent = `Backend: ${sub} | ckpool-solo (Stratum v1) | DGBD: ${dgbd} | ckpool: ${ckpool}${channel}`;
+    el.textContent = `Backend: ${sub} | ckpool-solo (Stratum v1) | DGB: ${dgbd} | ckpool: ${ckpool}${channel}`;
   } catch {
     el.textContent = 'Backend info unavailable.';
   }
@@ -313,12 +472,25 @@ async function refreshCharts() {
     const series = await fetchJson(`/api/timeseries/pool?trail=${encodeURIComponent(trail)}`);
     const points = (series && series.points) || [];
     const workers = points.map((p) => ({ v: Number(p.workers) || 0 }));
-    const hashrate = points.map((p) => ({ v: Number(p.hashrate_ths) || 0 }));
     drawSparkline(document.getElementById('chart-workers'), workers, { format: (v) => String(Math.round(v)) });
-    drawSparkline(document.getElementById('chart-hashrate'), hashrate, { format: (v) => v.toFixed(2) });
+
+    const s1m = points.map((p) => ({ v: Number(p.hashrate_1m_ths) }));
+    const s5m = points.map((p) => ({ v: Number(p.hashrate_5m_ths) }));
+    const s15m = points.map((p) => ({ v: Number(p.hashrate_15m_ths) }));
+    const s1h = points.map((p) => ({ v: Number(p.hashrate_1h_ths) }));
+    drawSparklineMulti(
+      document.getElementById('chart-hashrate'),
+      [
+        { label: '1m', color: '#00e5ff', points: s1m },
+        { label: '5m', color: '#ff2bd6', points: s5m },
+        { label: '15m', color: '#ff9a00', points: s15m },
+        { label: '1h', color: '#22c55e', points: s1h },
+      ],
+      { format: (v) => v.toFixed(2) }
+    );
   } catch {
     drawSparkline(document.getElementById('chart-workers'), []);
-    drawSparkline(document.getElementById('chart-hashrate'), []);
+    drawSparklineMulti(document.getElementById('chart-hashrate'), []);
   }
 }
 

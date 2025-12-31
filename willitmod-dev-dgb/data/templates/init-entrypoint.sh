@@ -8,8 +8,8 @@ mkdir -p /data/node /data/pool/config /data/pool/www/pool /data/ui/static
 if [ -n "${APP_VERSION:-}" ] && [ -n "${UI_SOURCE_BASE:-}" ]; then
   current="$(cat /data/ui/VERSION 2>/dev/null || true)"
   if [ "$current" != "$APP_VERSION" ]; then
-    echo "[axebch] Updating UI to $APP_VERSION"
-    tmp="$(mktemp -d 2>/dev/null || echo /tmp/axebch-ui)"
+    echo "[axedgb] Updating UI to $APP_VERSION"
+    tmp="$(mktemp -d 2>/dev/null || echo /tmp/axedgb-ui)"
     mkdir -p "$tmp/ui/static"
     ok=1
     set +e
@@ -27,7 +27,7 @@ if [ -n "${APP_VERSION:-}" ] && [ -n "${UI_SOURCE_BASE:-}" ]; then
       printf "%s\n" "$APP_VERSION" > /data/ui/VERSION
       chown -R 1000:1000 /data/ui
     else
-      echo "[axebch] WARNING: UI download failed; keeping existing UI"
+      echo "[axedgb] WARNING: UI download failed; keeping existing UI"
     fi
     rm -rf "$tmp" >/dev/null 2>&1 || true
   fi
