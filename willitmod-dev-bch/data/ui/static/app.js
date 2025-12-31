@@ -114,14 +114,12 @@ async function postJson(url, body) {
 
 const __CASHADDR_RE = /^(?:(?:bitcoincash|bchtest|bchreg):)?[qp][0-9a-z]{41,60}$/i;
 const __LEGACY_BCH_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
-const __CASHADDR_MODAL_DISMISSED_KEY = 'axebch_cashaddr_modal_dismissed_v6';
 
 function __getCashaddrModalEls() {
   return {
     root: document.getElementById('cashaddr-modal'),
     cashaddr: document.getElementById('cashaddr-modal-cashaddr'),
     legacy: document.getElementById('cashaddr-modal-legacy'),
-    dontShow: document.getElementById('cashaddr-modal-dontshow'),
     copy: document.getElementById('cashaddr-modal-copy'),
     close: document.getElementById('cashaddr-modal-close'),
   };
@@ -150,10 +148,6 @@ async function __copyToClipboard(text) {
 }
 
 function __showCashaddrModal({ cashaddr, legacy }) {
-  try {
-    if (localStorage.getItem(__CASHADDR_MODAL_DISMISSED_KEY) === '1') return;
-  } catch {}
-
   const els = __getCashaddrModalEls();
   if (!els.root) return;
 
@@ -172,11 +166,6 @@ function __showCashaddrModal({ cashaddr, legacy }) {
   }
 
   const close = () => {
-    if (els.dontShow && els.dontShow.checked) {
-      try {
-        localStorage.setItem(__CASHADDR_MODAL_DISMISSED_KEY, '1');
-      } catch {}
-    }
     els.root.classList.add('hidden');
   };
 
