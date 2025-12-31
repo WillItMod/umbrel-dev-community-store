@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 import os
@@ -45,7 +46,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-bch"
-APP_VERSION = "0.7.0-alpha"
+APP_VERSION = "0.7.1-alpha"
 
 BCH_RPC_HOST = os.getenv("BCH_RPC_HOST", "bchn")
 BCH_RPC_PORT = int(os.getenv("BCH_RPC_PORT", "28332"))
@@ -474,12 +475,118 @@ _CASHADDR_RE = re.compile(r"^(?:(?:bitcoincash|bchtest|bchreg):)?(?P<body>[qp][0
 _LEGACY_RE = re.compile(r"^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$")
 
 
-def _normalize_bch_address(addr: str) -> str:
+_CASHADDR_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+_CASHADDR_HELP_URL = "https://bch.info/en/tools/cashaddr"
+_CASHADDR_ALPHABET_REV = {c: i for i, c in enumerate(_CASHADDR_ALPHABET)}
+_CASHADDR_POLYMOD_GEN = (
+    0x98F2BC8E61,
+    0x79B76D99E2,
+    0xF33E5FB3C4,
+    0xAE2EABE2A8,
+    0x1E4F43E470,
+)
+_CASHADDR_SIZE_MAP = {0: 20, 1: 24, 2: 28, 3: 32, 4: 40, 5: 48, 6: 56, 7: 64}
+
+
+def _cashaddr_prefix_expand(prefix: str) -> list[int]:
+    return [ord(ch) & 0x1F for ch in prefix] + [0]
+
+
+def _cashaddr_polymod(values: list[int]) -> int:
+    chk = 1
+    for v in values:
+        top = chk >> 35
+        chk = ((chk & 0x07FFFFFFFF) << 5) ^ v
+        for i in range(5):
+            if (top >> i) & 1:
+                chk ^= _CASHADDR_POLYMOD_GEN[i]
+    return chk
+
+
+def _cashaddr_verify_checksum(prefix: str, payload: list[int]) -> bool:
+    # CashAddr checksum constant is 1 (i.e. polymod == 1)
+    return _cashaddr_polymod(_cashaddr_prefix_expand(prefix) + payload) == 1
+
+
+def _convertbits(data: list[int], frombits: int, tobits: int, pad: bool) -> list[int]:
+    acc = 0
+    bits = 0
+    ret: list[int] = []
+    maxv = (1 << tobits) - 1
+    for value in data:
+        if value < 0 or (value >> frombits):
+            raise ValueError("invalid value")
+        acc = (acc << frombits) | value
+        bits += frombits
+        while bits >= tobits:
+            bits -= tobits
+            ret.append((acc >> bits) & maxv)
+    if pad:
+        if bits:
+            ret.append((acc << (tobits - bits)) & maxv)
+    else:
+        if bits >= frombits:
+            raise ValueError("illegal zero padding")
+        if (acc << (tobits - bits)) & maxv:
+            raise ValueError("non-zero padding")
+    return ret
+
+
+def _base58check_encode(prefix_byte: int, payload: bytes) -> str:
+    raw = bytes([prefix_byte]) + payload
+    chk = hashlib.sha256(hashlib.sha256(raw).digest()).digest()[:4]
+    b = raw + chk
+
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    n = int.from_bytes(b, "big")
+    out = ""
+    while n:
+        n, r = divmod(n, 58)
+        out = alphabet[r] + out
+
+    leading_zeros = 0
+    for c in b:
+        if c == 0:
+            leading_zeros += 1
+        else:
+            break
+    return ("1" * leading_zeros) + out
+
+
+def _cashaddr_to_legacy(addr: str) -> tuple[str, bool]:
     a = (addr or "").strip()
+    if _LEGACY_RE.match(a):
+        return a, False
+
     m = _CASHADDR_RE.match(a)
-    if m:
-        return m.group("body").lower()
-    return a
+    if not m:
+        raise ValueError("payoutAddress must be a CashAddr (q/p...) or legacy (1/3...) BCH address")
+
+    prefix = "bitcoincash"
+    if ":" in a:
+        prefix = a.split(":", 1)[0].lower()
+    body = m.group("body").lower()
+    data = [_CASHADDR_ALPHABET_REV[ch] for ch in body]
+    if not _cashaddr_verify_checksum(prefix, data):
+        raise ValueError("payoutAddress has an invalid CashAddr checksum")
+
+    payload_no_checksum = data[:-8]
+    decoded = _convertbits(payload_no_checksum, 5, 8, pad=False)
+    version = decoded[0]
+    h = bytes(decoded[1:])
+
+    addr_type = version >> 3
+    size_code = version & 7
+    expected_len = _CASHADDR_SIZE_MAP.get(size_code)
+    if expected_len is None or len(h) != expected_len:
+        raise ValueError("payoutAddress has an unexpected hash size")
+
+    if addr_type == 0:
+        return _base58check_encode(0x00, h), True  # P2PKH
+    if addr_type == 1:
+        return _base58check_encode(0x05, h), True  # P2SH
+
+    raise ValueError("payoutAddress must be a P2PKH or P2SH address")
 
 
 def _looks_like_bch_address(addr: str) -> bool:
@@ -492,15 +599,18 @@ def _update_pool_settings(*, payout_address: str):
     if not addr_raw:
         raise ValueError("payoutAddress is required")
 
-    if not _looks_like_bch_address(addr_raw):
-        raise ValueError("payoutAddress must be a CashAddr (q/p...) or legacy (1/3...) BCH address")
-
-    addr = _normalize_bch_address(addr_raw)
+    addr_legacy, converted_from_cashaddr = _cashaddr_to_legacy(addr_raw)
 
     validated = None
     validation_warning = None
+    conversion_notice = None
+    if converted_from_cashaddr:
+        conversion_notice = (
+            f"CashAddr detected and converted to legacy format for ckpool compatibility: {addr_legacy}. "
+            f"Converter: {_CASHADDR_HELP_URL}"
+        )
     try:
-        res = _rpc_call("validateaddress", [addr]) or {}
+        res = _rpc_call("validateaddress", [addr_legacy]) or {}
         validated = bool(res.get("isvalid"))
         if not validated:
             raise ValueError("payoutAddress is not a valid BCH address")
@@ -509,10 +619,15 @@ def _update_pool_settings(*, payout_address: str):
         validation_warning = (
             "Node RPC unavailable; saved without RPC validation. Double-check your address, then restart the app."
         )
+        if conversion_notice:
+            validation_warning = f"{validation_warning} {conversion_notice}"
 
     conf = _read_ckpool_conf()
-    conf["btcaddress"] = addr
+    # ckpool expects a legacy/Base58 address here.
+    conf["btcaddress"] = addr_legacy
     conf["validated"] = bool(validated) if validated is not None else False
+    if conversion_notice and not validation_warning:
+        validation_warning = conversion_notice
     if validation_warning:
         conf["validationWarning"] = validation_warning
     else:
@@ -784,7 +899,7 @@ def _widget_pool():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "willitmod-dev-bch/0.7.0"
+    server_version = "willitmod-dev-bch/0.7.1"
 
     def _send(self, status: int, body: bytes, content_type: str):
         self.send_response(status)
