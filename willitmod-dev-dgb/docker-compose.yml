@@ -45,6 +45,14 @@ services:
           envsubst < /data/templates/digibyte.conf.template > /data/node/digibyte.conf
           chown -R 1000:1000 /data/node
         else
+          if ! grep -q '^maxconnections=' /data/node/digibyte.conf; then
+            echo "[axedgb] Adding maxconnections=64 to digibyte.conf"
+            {
+              printf "\n"
+              printf "# AxeDGB defaults\n"
+              printf "maxconnections=64\n"
+            } >> /data/node/digibyte.conf
+          fi
           if ! grep -q 'axedgb-seeds-v1' /data/node/digibyte.conf; then
             echo "[axedgb] Adding bootstrap peers to digibyte.conf"
             {

@@ -4,6 +4,9 @@ txindex=0
 # Pruning: disabled by default (archival).
 prune=0
 
+# Peer connections (higher can speed initial sync, up to your bandwidth/CPU).
+maxconnections=64
+
 # Network selection (uncomment one, then restart the app):
 # testnet=1
 # regtest=1
