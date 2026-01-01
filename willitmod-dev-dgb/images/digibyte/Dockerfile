@@ -1,8 +1,10 @@
 FROM debian:bookworm-slim
 
-ARG DGB_RELEASE_TAG="v8.22.0-final"
-ARG DGB_AMD64_SHA256="5a305bd2fd94cb855c7fd2c969690a8675e6f17ee978f249ab97b54f326cef9d"
-ARG DGB_ARM64_SHA256="684df37faca42f39d9e246a9d245c0e71885c1c7dc222847cd738c1a324f3cad"
+# v8.26.1 does not publish an arm64 Linux tarball upstream.
+# v8.22.2 is the newest DigiByte Core release with official linux/amd64 + linux/arm64 tarballs.
+ARG DGB_RELEASE_TAG="v8.22.2"
+ARG DGB_AMD64_SHA256="edfcc9df8c2ecbba9b9e8d2332dee1ec3d053554c3700ca0151477f7375fc342"
+ARG DGB_ARM64_SHA256="9e3fde26454fae9036973c931f8ba3c354c73afe1d0a598f573e227b12c73ad8"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -12,8 +14,8 @@ RUN apt-get update && \
 
 RUN set -eu; \
     case "${TARGETARCH:-}" in \
-      amd64) asset="digibyte-x86_64-linux-gnu.tar.gz"; sha="${DGB_AMD64_SHA256}" ;; \
-      arm64) asset="digibyte-aarch64-linux-gnu.tar.gz"; sha="${DGB_ARM64_SHA256}" ;; \
+      amd64) asset="digibyte-8.22.2-x86_64-linux-gnu.tar.gz"; sha="${DGB_AMD64_SHA256}" ;; \
+      arm64) asset="digibyte-8.22.2-aarch64-linux-gnu.tar.gz"; sha="${DGB_ARM64_SHA256}" ;; \
       *) echo "unsupported TARGETARCH=${TARGETARCH:-<unset>}"; exit 1 ;; \
     esac; \
     url="https://github.com/DigiByte-Core/digibyte/releases/download/${DGB_RELEASE_TAG}/${asset}"; \
@@ -39,4 +41,3 @@ USER 1000:1000
 EXPOSE 12024 14022
 
 CMD ["digibyted", "-datadir=/data", "-printtoconsole"]
-
