@@ -113,6 +113,44 @@ services:
           fi
         fi
 
+        # Ensure Miningcore has a coins.json available at runtime.
+        # Our Miningcore container expects this file next to the binary; without it, the API can crash on startup.
+        if [ ! -f /data/pool/config/coins.json ]; then
+          cat > /data/pool/config/coins.json <<'EOF'
+        {
+          "digibyte-sha256": {
+            "name": "DigiByte SHA256",
+            "canonicalName": "DigiByte SHA256",
+            "symbol": "DGB",
+            "family": "bitcoin",
+            "website": "https://digibyte.org",
+            "market": "https://coinmarketcap.com/currencies/digibyte",
+            "twitter": "https://twitter.com/DigiByteCoin",
+            "telegram": "https://t.me/DigiByteCoin",
+            "discord": "https://discord.gg/digibyte",
+            "coinbaseHasher": "sha256d",
+            "headerHasher": "sha256d",
+            "blockHasher": "sha256d",
+            "blockTemplateRpcExtraParams": {
+              "rules": [
+                "segwit"
+              ]
+            },
+            "explorerBlockLink": "https://digiexplorer.info/block/{0}",
+            "explorerTxLink": "https://digiexplorer.info/tx/{0}",
+            "explorerAccountLink": "https://digiexplorer.info/address/{0}",
+            "kdf": "scrypt",
+            "poWHashers": {
+              "sha256d": {
+                "defaultHashrate": 1.0
+              }
+            }
+          }
+        }
+        EOF
+          chown 1000:1000 /data/pool/config/coins.json || true
+        fi
+
         # Ensure Miningcore DB schema exists (poolstats etc). This is safe to re-run when missing.
         export PGPASSWORD="$$DB_PASSWORD"
         echo "[axedgb] Waiting for postgres..."
@@ -223,6 +261,7 @@ services:
       - "5678:3333/tcp" # Stratum v1 (SHA256)
     volumes:
       - ${APP_DATA_DIR}/data/pool/config/miningcore.json:/app/config.json:ro
+      - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
     image: ghcr.io/willitmod/axedgb-app:0.7.41-alpha
