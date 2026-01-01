@@ -52,7 +52,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.60-alpha"
+APP_VERSION = "0.7.61-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1602,6 +1602,8 @@ class PoolSeries:
 
 
 POOL_SERIES_BY_POOL: dict[str, PoolSeries] = {}
+POOL_LAST_REQUEST_S: dict[str, float] = {}
+POOL_LAST_REQUEST_LOCK = threading.Lock()
 
 
 def _pool_series(pool_id: str) -> PoolSeries:
@@ -1616,6 +1618,13 @@ def _series_sampler(stop_event: threading.Event):
     while not stop_event.is_set():
         ids = _pool_ids()
         for algo, pool_id in ids.items():
+            # Avoid hammering Miningcore for secondary pools during node warmup.
+            # Miningcore can return 500s for pools that haven't fully initialized yet.
+            if algo != "sha256":
+                with POOL_LAST_REQUEST_LOCK:
+                    last = float(POOL_LAST_REQUEST_S.get(pool_id) or 0.0)
+                if last <= 0 or (time.time() - last) > 120:
+                    continue
             try:
                 status = _pool_status(pool_id, algo=algo)
                 workers = status.get("workers")
@@ -1770,6 +1779,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/pool":
             algo = _algo_from_query(raw_path)
             pool_id = _pool_id_for_algo(algo)
+            with POOL_LAST_REQUEST_LOCK:
+                POOL_LAST_REQUEST_S[pool_id] = time.time()
             return self._send(*_json(_pool_status(pool_id, algo=algo)))
 
         if self.path == "/api/pool/workers":
