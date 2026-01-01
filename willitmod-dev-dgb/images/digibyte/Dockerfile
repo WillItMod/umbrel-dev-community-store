@@ -2,6 +2,7 @@ FROM debian:bookworm-slim
 
 # v8.26.1 does not publish an arm64 Linux tarball upstream.
 # v8.22.2 is the newest DigiByte Core release with official linux/amd64 + linux/arm64 tarballs.
+ARG TARGETARCH
 ARG DGB_RELEASE_TAG="v8.22.2"
 ARG DGB_AMD64_SHA256="edfcc9df8c2ecbba9b9e8d2332dee1ec3d053554c3700ca0151477f7375fc342"
 ARG DGB_ARM64_SHA256="9e3fde26454fae9036973c931f8ba3c354c73afe1d0a598f573e227b12c73ad8"
