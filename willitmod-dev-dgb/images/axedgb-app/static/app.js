@@ -265,6 +265,20 @@ function escapeHtml(s) {
     .replaceAll("'", '&#039;');
 }
 
+function getAlgo() {
+  const el = document.getElementById('algo');
+  const saved = localStorage.getItem('dgbAlgo');
+  if (saved && el && el.value !== saved) el.value = saved;
+  return (el && el.value) || saved || 'sha256';
+}
+
+function getStratumPort(algo) {
+  const ports = window.__stratumPorts || {};
+  const p = ports && typeof ports === 'object' ? Number(ports[algo]) : NaN;
+  if (Number.isFinite(p) && p > 0) return p;
+  return algo === 'scrypt' ? 5679 : 5678;
+}
+
 async function refresh() {
   try {
     const res = await fetch('/api/node', { cache: 'no-store' });
@@ -331,7 +345,8 @@ async function refresh() {
   }
 
   try {
-    const pool = await fetchJson('/api/pool');
+    const algo = getAlgo();
+    const pool = await fetchJson(`/api/pool?algo=${encodeURIComponent(algo)}`);
     document.getElementById('workers').textContent = pool.workers ?? '-';
     document.getElementById('hashrate').textContent = formatTHS(pool.hashrate_ths);
     document.getElementById('bestshare').textContent = formatEffortPercent(pool.effort_percent);
@@ -387,10 +402,11 @@ async function refresh() {
 }
 
 function setStratumUrl() {
+  const algo = getAlgo();
   const host = window.location && window.location.hostname ? String(window.location.hostname) : '';
   if (!host) return;
   if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') return;
-  const url = `stratum+tcp://${host}:5678`;
+  const url = `stratum+tcp://${host}:${getStratumPort(algo)}`;
   const ids = ['stratum-url', 'stratum-url-note'];
   for (const id of ids) {
     const el = document.getElementById(id);
@@ -478,6 +494,7 @@ async function loadBackendInfo() {
   if (!el) return;
   try {
     const about = await fetchJson('/api/about');
+    window.__stratumPorts = about && about.stratumPorts ? about.stratumPorts : window.__stratumPorts;
     const node = about.node;
     const sub = node && node.subversion ? node.subversion : 'node unavailable';
     const dgbd = shortenImageRef(about.images && about.images.dgbd);
@@ -512,7 +529,8 @@ function getTrail() {
 async function refreshCharts() {
   const trail = getTrail();
   try {
-    const series = await fetchJson(`/api/timeseries/pool?trail=${encodeURIComponent(trail)}`);
+    const algo = getAlgo();
+    const series = await fetchJson(`/api/timeseries/pool?algo=${encodeURIComponent(algo)}&trail=${encodeURIComponent(trail)}`);
     const points = (series && series.points) || [];
     const workers = points.map((p) => ({ v: Number(p.workers) || 0 }));
     drawSparkline(document.getElementById('chart-workers'), workers, { format: (v) => String(Math.round(v)) });
@@ -573,6 +591,14 @@ document.getElementById('support-jump').addEventListener('click', () => {
 document.getElementById('trail').addEventListener('change', async () => {
   localStorage.setItem('dgbTrail', document.getElementById('trail').value);
   await refreshCharts();
+});
+
+document.getElementById('algo')?.addEventListener('change', async (e) => {
+  const v = String(e?.target?.value || 'sha256');
+  localStorage.setItem('dgbAlgo', v);
+  setStratumUrl();
+  await refreshCharts();
+  await refresh();
 });
 
 document.getElementById('settings-form').addEventListener('submit', async (e) => {
@@ -647,3 +673,8 @@ try {
   const trail = localStorage.getItem('dgbTrail');
   if (trail) document.getElementById('trail').value = trail;
 } catch {}
+try {
+  const algo = localStorage.getItem('dgbAlgo');
+  if (algo && document.getElementById('algo')) document.getElementById('algo').value = algo;
+} catch {}
+setStratumUrl();

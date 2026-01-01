@@ -20,16 +20,16 @@ _DEFAULT_STATIC_DIR = "/app/static" if Path("/app/static").exists() else "/data/
 STATIC_DIR = Path(os.getenv("STATIC_DIR", _DEFAULT_STATIC_DIR))
 MININGCORE_API_URL = os.getenv("MININGCORE_API_URL", "http://miningcore:4000").strip().rstrip("/")
 MININGCORE_POOL_ID = os.getenv("MININGCORE_POOL_ID", "dgb-sha256-1").strip()
+MININGCORE_POOL_IDS = os.getenv("MININGCORE_POOL_IDS", "").strip()
+STRATUM_PORTS = os.getenv("STRATUM_PORTS", "").strip()
 MININGCORE_CONF_PATH = Path(os.getenv("MININGCORE_CONF_PATH", "/data/pool/config/miningcore.json"))
 NODE_CONF_PATH = Path("/data/node/digibyte.conf")
 NODE_LOG_PATH = Path("/data/node/debug.log")
 NODE_REINDEX_FLAG_PATH = Path("/data/node/.reindex-chainstate")
 STATE_DIR = Path("/data/ui/state")
-POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
 POOL_SETTINGS_STATE_PATH = STATE_DIR / "pool_settings.json"
 INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
-POOL_CACHE_PATH = STATE_DIR / "pool_cache.json"
 CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
 POOL_PLACEHOLDER_PAYOUT_ADDRESS = "CHANGEME_DGB_PAYOUT_ADDRESS"
 
@@ -52,7 +52,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.58-alpha"
+APP_VERSION = "0.7.59-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -107,6 +107,82 @@ def _read_static(rel_path: str):
             pass
 
     return 200, path.read_bytes(), content_type
+
+
+def _parse_pool_ids(raw: str) -> dict[str, str]:
+    """
+    Parse MININGCORE_POOL_IDS like: "sha256:dgb-sha256-1,scrypt:dgb-scrypt-1".
+    """
+    out: dict[str, str] = {}
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            continue
+        k, v = part.split(":", 1)
+        k = k.strip().lower()
+        v = v.strip()
+        if not k or not v:
+            continue
+        out[k] = v
+    return out
+
+
+def _pool_ids() -> dict[str, str]:
+    ids = _parse_pool_ids(MININGCORE_POOL_IDS)
+    if ids:
+        return ids
+    return {"sha256": MININGCORE_POOL_ID}
+
+
+def _parse_ports(raw: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            continue
+        k, v = part.split(":", 1)
+        k = k.strip().lower()
+        v = v.strip()
+        if not k or not v:
+            continue
+        try:
+            out[k] = int(v)
+        except Exception:
+            continue
+    return out
+
+
+def _stratum_ports() -> dict[str, int]:
+    ports = _parse_ports(STRATUM_PORTS)
+    if ports:
+        return ports
+    return {"sha256": 5678, "scrypt": 5679}
+
+
+def _algo_from_query(path: str) -> str | None:
+    try:
+        if "?" not in path:
+            return None
+        _, query = path.split("?", 1)
+        for part in query.split("&"):
+            if part.startswith("algo="):
+                return part.split("=", 1)[1].strip().lower() or None
+    except Exception:
+        return None
+    return None
+
+
+def _pool_id_for_algo(algo: str | None) -> str:
+    ids = _pool_ids()
+    if algo and algo in ids:
+        return ids[algo]
+    if "sha256" in ids:
+        return ids["sha256"]
+    return next(iter(ids.values()))
 
 
 def _rpc_call(method: str, params=None):
@@ -622,19 +698,33 @@ def _read_node_cache():
         return None
 
 
-def _write_pool_cache(status: dict):
+def _safe_slug(value: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip())
+    return s or "default"
+
+
+def _pool_cache_path(pool_id: str) -> Path:
+    return STATE_DIR / f"pool_cache_{_safe_slug(pool_id)}.json"
+
+
+def _pool_series_path(pool_id: str) -> Path:
+    return STATE_DIR / f"pool_timeseries_{_safe_slug(pool_id)}.jsonl"
+
+
+def _write_pool_cache(pool_id: str, status: dict):
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        POOL_CACHE_PATH.write_text(json.dumps({"t": int(time.time()), "status": status}) + "\n", encoding="utf-8")
+        _pool_cache_path(pool_id).write_text(json.dumps({"t": int(time.time()), "status": status}) + "\n", encoding="utf-8")
     except Exception:
         pass
 
 
-def _read_pool_cache():
+def _read_pool_cache(pool_id: str):
     try:
-        if not POOL_CACHE_PATH.exists():
+        path = _pool_cache_path(pool_id)
+        if not path.exists():
             return None
-        obj = json.loads(POOL_CACHE_PATH.read_text(encoding="utf-8", errors="replace"))
+        obj = json.loads(path.read_text(encoding="utf-8", errors="replace"))
         t = int(obj.get("t") or 0)
         status = obj.get("status") or {}
         if not isinstance(status, dict):
@@ -659,6 +749,8 @@ def _about():
             "miningcore": MININGCORE_IMAGE or None,
             "postgres": POSTGRES_IMAGE or None,
         },
+        "poolIds": _pool_ids(),
+        "stratumPorts": _stratum_ports(),
         "node": node,
         "nodeError": node_error,
         "pool": _pool_settings(),
@@ -763,6 +855,7 @@ def _pool_settings():
     mindiff = None
     startdiff = None
     maxdiff = None
+    primary_pool_id = _pool_id_for_algo("sha256")
 
     try:
         conf = _read_miningcore_conf()
@@ -770,7 +863,7 @@ def _pool_settings():
         pool_conf = None
         if isinstance(pools, list):
             for item in pools:
-                if isinstance(item, dict) and str(item.get("id") or "") == MININGCORE_POOL_ID:
+                if isinstance(item, dict) and str(item.get("id") or "") == primary_pool_id:
                     pool_conf = item
                     break
             if pool_conf is None:
@@ -852,70 +945,101 @@ def _update_pool_settings(
         pools = []
         conf["pools"] = pools
 
-    pool_conf = None
-    for item in pools:
-        if isinstance(item, dict) and str(item.get("id") or "") == MININGCORE_POOL_ID:
-            pool_conf = item
-            break
-    if pool_conf is None:
-        pool_conf = {"id": MININGCORE_POOL_ID, "enabled": True, "coin": "digibyte-sha256"}
-        pools.append(pool_conf)
-    pool_conf["address"] = addr
-
     md = _maybe_int(mindiff)
     sd = _maybe_int(startdiff)
     xd = _maybe_int(maxdiff)
+
+    algo_to_pool_id = _pool_ids()
+    algo_to_coin = {
+        "sha256": "digibyte-sha256",
+        "scrypt": "digibyte-scrypt",
+    }
+    algo_to_port = {
+        "sha256": "3333",
+        "scrypt": "3334",
+    }
     try:
-        ports = pool_conf.get("ports") or {}
-        if not isinstance(ports, dict):
-            ports = {}
-            pool_conf["ports"] = ports
-        if ports:
-            port_key = next(iter(ports.keys()))
-        else:
-            port_key = "3333"
-            ports[port_key] = {"listenAddress": "0.0.0.0"}
+        def upsert(pool_id: str, *, coin: str | None, port: str):
+            pool_conf = None
+            for item in pools:
+                if isinstance(item, dict) and str(item.get("id") or "") == pool_id:
+                    pool_conf = item
+                    break
+            if pool_conf is None:
+                pool_conf = {"id": pool_id, "enabled": True}
+                if coin:
+                    pool_conf["coin"] = coin
+                pools.append(pool_conf)
+            else:
+                if coin:
+                    pool_conf.setdefault("coin", coin)
 
-        endpoint = ports.get(port_key)
-        if not isinstance(endpoint, dict):
-            endpoint = {"listenAddress": "0.0.0.0"}
-            ports[port_key] = endpoint
+            pool_conf["address"] = addr
 
-        vardiff = endpoint.get("varDiff") or {}
-        if not isinstance(vardiff, dict):
-            vardiff = {}
-        endpoint["varDiff"] = vardiff
+            ports = pool_conf.get("ports") or {}
+            if not isinstance(ports, dict):
+                ports = {}
+                pool_conf["ports"] = ports
+            endpoint = ports.get(port)
+            if not isinstance(endpoint, dict):
+                endpoint = {"listenAddress": "0.0.0.0"}
+                ports[port] = endpoint
 
-        md_existing = _maybe_int(vardiff.get("minDiff")) or 1024
-        sd_existing = _maybe_int(endpoint.get("difficulty")) or 1024
-        xd_existing = _maybe_int(vardiff.get("maxDiff")) or 0
+            vardiff = endpoint.get("varDiff") or {}
+            if not isinstance(vardiff, dict):
+                vardiff = {}
+            endpoint["varDiff"] = vardiff
 
-        md = md if md is not None else md_existing
-        sd = sd if sd is not None else sd_existing
-        xd = xd if xd is not None else xd_existing
+            md_existing = _maybe_int(vardiff.get("minDiff")) or 1024
+            sd_existing = _maybe_int(endpoint.get("difficulty")) or 1024
+            xd_existing = _maybe_int(vardiff.get("maxDiff")) or 0
 
-        if md < 1:
-            raise ValueError("mindiff must be >= 1")
-        if sd < md:
-            raise ValueError("startdiff must be >= mindiff")
-        if xd != 0 and xd < sd:
-            raise ValueError("maxdiff must be 0 (no limit) or >= startdiff")
+            use_md = md if md is not None else md_existing
+            use_sd = sd if sd is not None else sd_existing
+            use_xd = xd if xd is not None else xd_existing
 
-        endpoint["difficulty"] = int(sd)
-        vardiff["minDiff"] = int(md)
-        vardiff["maxDiff"] = None if int(xd) == 0 else int(xd)
+            if use_md < 1:
+                raise ValueError("mindiff must be >= 1")
+            if use_sd < use_md:
+                raise ValueError("startdiff must be >= mindiff")
+            if use_xd != 0 and use_xd < use_sd:
+                raise ValueError("maxdiff must be 0 (no limit) or >= startdiff")
+
+            endpoint["difficulty"] = int(use_sd)
+            vardiff["minDiff"] = int(use_md)
+            vardiff["maxDiff"] = None if int(use_xd) == 0 else int(use_xd)
+
+        for algo, pool_id in algo_to_pool_id.items():
+            coin = algo_to_coin.get(algo)
+            port = algo_to_port.get(algo, "3333")
+            upsert(pool_id, coin=coin, port=port)
+
     except (TypeError, ValueError):
         raise
     except Exception:
         # Fall back to safe defaults.
-        pool_conf.setdefault("ports", {"3333": {"listenAddress": "0.0.0.0"}})
-        endpoint = next(iter(pool_conf["ports"].values()))
-        if isinstance(endpoint, dict):
-            endpoint.setdefault("difficulty", 1024)
-            endpoint.setdefault("varDiff", {})
-            if isinstance(endpoint["varDiff"], dict):
-                endpoint["varDiff"].setdefault("minDiff", 1024)
-                endpoint["varDiff"].setdefault("maxDiff", None)
+        for algo, pool_id in algo_to_pool_id.items():
+            port = algo_to_port.get(algo, "3333")
+            found = None
+            for item in pools:
+                if isinstance(item, dict) and str(item.get("id") or "") == pool_id:
+                    found = item
+                    break
+            if found is None:
+                found = {"id": pool_id, "enabled": True}
+                coin = algo_to_coin.get(algo)
+                if coin:
+                    found["coin"] = coin
+                pools.append(found)
+            found["address"] = addr
+            found.setdefault("ports", {port: {"listenAddress": "0.0.0.0"}})
+            endpoint = found["ports"].get(port) if isinstance(found.get("ports"), dict) else None
+            if isinstance(endpoint, dict):
+                endpoint.setdefault("difficulty", 1024)
+                endpoint.setdefault("varDiff", {})
+                if isinstance(endpoint["varDiff"], dict):
+                    endpoint["varDiff"].setdefault("minDiff", 1024)
+                    endpoint["varDiff"].setdefault("maxDiff", None)
 
     _write_miningcore_conf(conf)
     _write_pool_settings_state(
@@ -950,9 +1074,37 @@ def _dget(obj: dict, *keys, default=None):
     return default
 
 
-def _pool_status():
+def _avg_hashrate_ths(points: list[dict], *, window_s: int) -> float | None:
+    if not points:
+        return None
     try:
-        data = _miningcore_get_json(f"/api/pools/{MININGCORE_POOL_ID}")
+        t_max = max(int(p.get("t") or 0) for p in points)
+    except Exception:
+        return None
+    cutoff = t_max - (window_s * 1000)
+    vals = []
+    for p in points:
+        try:
+            t = int(p.get("t") or 0)
+        except Exception:
+            continue
+        if t < cutoff:
+            continue
+        v = p.get("hashrate_ths")
+        try:
+            fv = float(v)
+        except Exception:
+            continue
+        if math.isfinite(fv):
+            vals.append(fv)
+    if not vals:
+        return None
+    return sum(vals) / len(vals)
+
+
+def _pool_status(pool_id: str, *, algo: str | None = None):
+    try:
+        data = _miningcore_get_json(f"/api/pools/{pool_id}")
         pool = _dget(data, "pool", "Pool", default={}) or {}
         stats = _dget(pool, "poolStats", "PoolStats", default={}) or {}
 
@@ -976,7 +1128,8 @@ def _pool_status():
 
         status = {
             "backend": "miningcore",
-            "poolId": MININGCORE_POOL_ID,
+            "poolId": pool_id,
+            "algo": algo,
             "workers": workers_i,
             "hashrate_ths": hashrate_ths,
             "effort_percent": effort_pct,
@@ -984,10 +1137,25 @@ def _pool_status():
             "cached": False,
             "lastSeen": int(time.time()),
         }
-        _write_pool_cache(status)
+        _write_pool_cache(pool_id, status)
+
+        try:
+            series = _pool_series(pool_id).query(trail="7d", max_points=MAX_SERIES_POINTS)
+            status["hashrates_ths"] = {
+                "1m": _avg_hashrate_ths(series, window_s=60),
+                "5m": _avg_hashrate_ths(series, window_s=5 * 60),
+                "15m": _avg_hashrate_ths(series, window_s=15 * 60),
+                "1h": _avg_hashrate_ths(series, window_s=60 * 60),
+                "6h": _avg_hashrate_ths(series, window_s=6 * 60 * 60),
+                "1d": _avg_hashrate_ths(series, window_s=24 * 60 * 60),
+                "7d": _avg_hashrate_ths(series, window_s=7 * 24 * 60 * 60),
+            }
+        except Exception:
+            pass
+
         return status
     except Exception as e:
-        cached = _read_pool_cache()
+        cached = _read_pool_cache(pool_id)
         if cached:
             status = dict(cached["status"])
             status.update(
@@ -998,7 +1166,8 @@ def _pool_status():
                 }
             )
             status.setdefault("backend", "miningcore")
-            status.setdefault("poolId", MININGCORE_POOL_ID)
+            status.setdefault("poolId", pool_id)
+            status.setdefault("algo", algo)
             status.setdefault("workers", 0)
             status.setdefault("hashrate_ths", None)
             status.setdefault("effort_percent", None)
@@ -1007,7 +1176,8 @@ def _pool_status():
 
         return {
             "backend": "miningcore",
-            "poolId": MININGCORE_POOL_ID,
+            "poolId": pool_id,
+            "algo": algo,
             "workers": 0,
             "hashrate_ths": None,
             "effort_percent": None,
@@ -1327,7 +1497,8 @@ def _support_ticket_payload(*, subject: str, message: str, email: str | None):
         diagnostics["node_error"] = str(e)
 
     try:
-        pool = _pool_status()
+        pool_id = _pool_id_for_algo("sha256")
+        pool = _pool_status(pool_id, algo="sha256")
         diagnostics["pool"] = {
             "workers": pool.get("workers"),
             "hashrate_ths": pool.get("hashrate_ths"),
@@ -1354,15 +1525,16 @@ def _now_ms():
 
 
 class PoolSeries:
-    def __init__(self):
+    def __init__(self, path: Path):
         self._lock = threading.Lock()
         self._points: list[dict] = []
+        self._path = path
 
     def load(self):
         cutoff_ms = _now_ms() - (MAX_RETENTION_S * 1000)
         points: list[dict] = []
-        if POOL_SERIES_PATH.exists():
-            for line in POOL_SERIES_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+        if self._path.exists():
+            for line in self._path.read_text(encoding="utf-8", errors="replace").splitlines():
                 line = line.strip()
                 if not line:
                     continue
@@ -1386,9 +1558,9 @@ class PoolSeries:
 
     def _rewrite(self, points: list[dict]):
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = POOL_SERIES_PATH.with_suffix(".tmp")
+        tmp = self._path.with_suffix(".tmp")
         tmp.write_text("\n".join(json.dumps(p, separators=(",", ":")) for p in points) + ("\n" if points else ""), encoding="utf-8")
-        tmp.replace(POOL_SERIES_PATH)
+        tmp.replace(self._path)
 
     def append(self, point: dict):
         cutoff_ms = _now_ms() - (MAX_RETENTION_S * 1000)
@@ -1399,11 +1571,11 @@ class PoolSeries:
                 self._points = self._points[-MAX_SERIES_POINTS:]
 
             STATE_DIR.mkdir(parents=True, exist_ok=True)
-            with POOL_SERIES_PATH.open("a", encoding="utf-8") as f:
+            with self._path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(point, separators=(",", ":")) + "\n")
 
             # Occasionally compact the file (simple heuristic).
-            if POOL_SERIES_PATH.stat().st_size > 10 * 1024 * 1024:
+            if self._path.stat().st_size > 10 * 1024 * 1024:
                 self._rewrite(self._points)
 
     def query(self, trail: str, max_points: int = 1000):
@@ -1429,38 +1601,48 @@ class PoolSeries:
         return pts[::stride]
 
 
-POOL_SERIES = PoolSeries()
+POOL_SERIES_BY_POOL: dict[str, PoolSeries] = {}
+
+
+def _pool_series(pool_id: str) -> PoolSeries:
+    series = POOL_SERIES_BY_POOL.get(pool_id)
+    if series is None:
+        series = PoolSeries(_pool_series_path(pool_id))
+        POOL_SERIES_BY_POOL[pool_id] = series
+    return series
 
 
 def _series_sampler(stop_event: threading.Event):
     while not stop_event.is_set():
-        try:
-            status = _pool_status()
-            workers = status.get("workers")
+        ids = _pool_ids()
+        for algo, pool_id in ids.items():
             try:
-                workers_i = int(workers)
-            except Exception:
-                workers_i = 0
-
-            def to_float(value):
-                if value is None:
-                    return None
+                status = _pool_status(pool_id, algo=algo)
+                workers = status.get("workers")
                 try:
-                    return float(value)
+                    workers_i = int(workers)
                 except Exception:
-                    return None
+                    workers_i = 0
 
-            hashrate_f = to_float(status.get("hashrate_ths"))
+                def to_float(value):
+                    if value is None:
+                        return None
+                    try:
+                        return float(value)
+                    except Exception:
+                        return None
 
-            POOL_SERIES.append(
-                {
-                    "t": _now_ms(),
-                    "workers": workers_i,
-                    "hashrate_ths": hashrate_f,
-                }
-            )
-        except Exception:
-            pass
+                hashrate_f = to_float(status.get("hashrate_ths"))
+
+                _pool_series(pool_id).append(
+                    {
+                        "t": _now_ms(),
+                        "workers": workers_i,
+                        "hashrate_ths": hashrate_f,
+                    }
+                )
+            except Exception:
+                pass
 
         stop_event.wait(SAMPLE_INTERVAL_S)
 
@@ -1489,7 +1671,8 @@ def _widget_sync():
 
 
 def _widget_pool():
-    p = _pool_status()
+    pool_id = _pool_id_for_algo("sha256")
+    p = _pool_status(pool_id, algo="sha256")
     return {
         "type": "three-stats",
         "items": [
@@ -1511,6 +1694,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        raw_path = self.path
+        path = urlsplit(self.path).path
         if self.path == "/api/about":
             return self._send(*_json(_about()))
 
@@ -1582,25 +1767,65 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 )
 
-        if self.path == "/api/pool":
-            return self._send(*_json(_pool_status()))
+        if path == "/api/pool":
+            algo = _algo_from_query(raw_path)
+            pool_id = _pool_id_for_algo(algo)
+            return self._send(*_json(_pool_status(pool_id, algo=algo)))
 
         if self.path == "/api/pool/workers":
             # The current UI only uses aggregated worker count from /api/pool.
             return self._send(*_json({"workers": []}))
 
-        if self.path.startswith("/api/timeseries/pool"):
+        if path.startswith("/api/timeseries/pool"):
             try:
                 query = ""
-                if "?" in self.path:
-                    _, query = self.path.split("?", 1)
+                if "?" in raw_path:
+                    _, query = raw_path.split("?", 1)
                 trail = "30m"
+                algo = None
                 for part in query.split("&"):
                     if part.startswith("trail="):
                         trail = part.split("=", 1)[1]
-                        break
-                pts = POOL_SERIES.query(trail=trail, max_points=1000)
-                return self._send(*_json({"trail": trail, "points": pts}))
+                    if part.startswith("algo="):
+                        algo = part.split("=", 1)[1].strip().lower() or None
+
+                pool_id = _pool_id_for_algo(algo)
+                pts = _pool_series(pool_id).query(trail=trail, max_points=1000)
+
+                windows = [
+                    ("hashrate_1m_ths", 60),
+                    ("hashrate_5m_ths", 5 * 60),
+                    ("hashrate_15m_ths", 15 * 60),
+                    ("hashrate_1h_ths", 60 * 60),
+                ]
+                enriched = []
+                for i, p in enumerate(pts):
+                    obj = dict(p)
+                    # Compute rolling averages ending at this point's timestamp.
+                    try:
+                        t = int(obj.get("t") or 0)
+                    except Exception:
+                        t = 0
+                    for key, window_s in windows:
+                        cutoff = t - (window_s * 1000)
+                        vals = []
+                        for q in pts[: i + 1]:
+                            try:
+                                qt = int(q.get("t") or 0)
+                            except Exception:
+                                continue
+                            if qt < cutoff:
+                                continue
+                            try:
+                                fv = float(q.get("hashrate_ths"))
+                            except Exception:
+                                continue
+                            if math.isfinite(fv):
+                                vals.append(fv)
+                        obj[key] = (sum(vals) / len(vals)) if vals else None
+                    enriched.append(obj)
+
+                return self._send(*_json({"trail": trail, "algo": algo, "poolId": pool_id, "points": enriched}))
             except Exception as e:
                 return self._send(*_json({"error": str(e)}, status=500))
 
@@ -1610,7 +1835,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/widget/pool":
             return self._send(*_json(_widget_pool()))
 
-        status, body, ct = _read_static(self.path if self.path != "/" else "/index.html")
+        status, body, ct = _read_static(path if path != "/" else "/index.html")
         return self._send(status, body, ct)
 
     def do_POST(self):
@@ -1708,7 +1933,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    POOL_SERIES.load()
+    for pool_id in _pool_ids().values():
+        _pool_series(pool_id).load()
 
     global INSTALL_ID
     INSTALL_ID = _get_or_create_install_id()
