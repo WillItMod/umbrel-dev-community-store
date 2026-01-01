@@ -137,7 +137,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/miningcore.json:/app/config.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app:0.7.34-alpha
+    image: ghcr.io/willitmod/axedgb-app:0.7.37-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
