@@ -52,7 +52,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.56-alpha"
+APP_VERSION = "0.7.57-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -97,6 +97,15 @@ def _read_static(rel_path: str):
         content_type = "application/javascript; charset=utf-8"
     elif suffix == ".svg":
         content_type = "image/svg+xml"
+
+    if rel == "index.html" and content_type.startswith("text/html"):
+        try:
+            html = path.read_text(encoding="utf-8", errors="replace")
+            html = html.replace("__APP_VERSION__", APP_VERSION)
+            return 200, html.encode("utf-8"), content_type
+        except Exception:
+            pass
+
     return 200, path.read_bytes(), content_type
 
 
