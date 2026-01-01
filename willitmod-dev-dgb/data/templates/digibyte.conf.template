@@ -7,6 +7,10 @@ prune=0
 # Peer connections (higher can speed initial sync, up to your bandwidth/CPU).
 maxconnections=64
 
+# Try to open the P2P port automatically if your router supports UPnP.
+# If UPnP is not available, you can still sync fine as an outbound-only node.
+upnp=1
+
 # Network selection (uncomment one, then restart the app):
 # testnet=1
 # regtest=1

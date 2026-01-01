@@ -53,6 +53,14 @@ services:
               printf "maxconnections=64\n"
             } >> /data/node/digibyte.conf
           fi
+          if ! grep -q '^upnp=' /data/node/digibyte.conf; then
+            echo "[axedgb] Adding upnp=1 to digibyte.conf"
+            {
+              printf "\n"
+              printf "# AxeDGB defaults\n"
+              printf "upnp=1\n"
+            } >> /data/node/digibyte.conf
+          fi
           if ! grep -q 'axedgb-seeds-v1' /data/node/digibyte.conf; then
             echo "[axedgb] Adding bootstrap peers to digibyte.conf"
             {
