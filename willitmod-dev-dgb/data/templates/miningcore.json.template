@@ -8,10 +8,12 @@
     "perPoolLogFile": false
   },
   "banning": {
-    "manager": "integrated",
     "banOnJunkReceive": true,
     "banOnInvalidShares": false,
     "banOnLoginFailure": false
+  },
+  "notifications": {
+    "enabled": false
   },
   "api": {
     "enabled": true,

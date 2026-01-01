@@ -44,3 +44,14 @@ addnode=66.108.15.5:12024
 addnode=73.156.140.158:12024
 addnode=144.76.103.24:12024
 addnode=184.164.16.141:12024
+
+# Testnet settings
+[test]
+# DigiByte Core only applies several settings to testnet when they are placed under [test].
+port=12026
+rpcport=14023
+rpcbind=0.0.0.0
+zmqpubhashblock=tcp://0.0.0.0:${DGB_ZMQ_HASHBLOCK_PORT}
+addnode=testnet-seed.digibyte.org:12026
+addnode=95.179.160.53:12026
+addnode=51.15.113.125:12026

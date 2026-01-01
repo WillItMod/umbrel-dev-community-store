@@ -32,7 +32,7 @@ services:
       - |-
         set -eu
 
-        apk add --no-cache envsubst curl >/dev/null
+        apk add --no-cache envsubst curl jq postgresql-client >/dev/null
 
         mkdir -p /data/node /data/pool/config /data/pool/postgres /data/templates
 
@@ -79,11 +79,64 @@ services:
               printf "addnode=184.164.16.141:12024\n"
             } >> /data/node/digibyte.conf
           fi
+
+          # Ensure testnet section exists so switching to testnet doesn't end up with 0 peers.
+          if ! grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
+            echo "[axedgb] Adding [test] section defaults to digibyte.conf"
+            {
+              printf "\n"
+              printf "# Testnet settings\n"
+              printf "[test]\n"
+              printf "port=12026\n"
+              printf "rpcport=14023\n"
+              printf "rpcbind=0.0.0.0\n"
+              printf "zmqpubhashblock=tcp://0.0.0.0:${DGB_ZMQ_HASHBLOCK_PORT}\n"
+              printf "addnode=testnet-seed.digibyte.org:12026\n"
+              printf "addnode=95.179.160.53:12026\n"
+              printf "addnode=51.15.113.125:12026\n"
+            } >> /data/node/digibyte.conf
+          fi
         fi
 
         if [ ! -f /data/pool/config/miningcore.json ]; then
           envsubst < /data/templates/miningcore.json.template > /data/pool/config/miningcore.json
           chown -R 1000:1000 /data/pool/config || true
+        else
+          # Normalize config across upgrades (some Miningcore builds don't accept banning.manager,
+          # and Miningcore currently assumes notifications exists).
+          if jq -e '.' >/dev/null 2>&1 < /data/pool/config/miningcore.json; then
+            tmp="$(mktemp)"
+            jq '
+              .notifications = (.notifications // {"enabled": false})
+              | (.banning |= (if type=="object" then del(.manager) else . end))
+            ' /data/pool/config/miningcore.json > "$tmp" && mv "$tmp" /data/pool/config/miningcore.json
+          fi
+        fi
+
+        # Ensure Miningcore DB schema exists (poolstats etc). This is safe to re-run when missing.
+        export PGPASSWORD="${DB_PASSWORD}"
+        echo "[axedgb] Waiting for postgres..."
+        for i in $(seq 1 60); do
+          if pg_isready -h "${DB_HOST}" -p 5432 -U "${DB_USER}" >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+
+        if ! psql -h "${DB_HOST}" -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -tA 2>/dev/null \
+          -c "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='poolstats';" | grep -q '^1$'; then
+          echo "[axedgb] Initializing Miningcore database schema"
+          psql -v ON_ERROR_STOP=1 -h "${DB_HOST}" -p 5432 -U "${DB_USER}" -d "${DB_NAME}" < /data/templates/miningcore-createdb.sql >/dev/null
+        fi
+
+        # Seed an initial poolstats row so Miningcore's API does not error before the first stats tick.
+        if psql -h "${DB_HOST}" -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -tA 2>/dev/null \
+          -c "SELECT COUNT(*) FROM poolstats WHERE poolid='dgb-sha256-1';" | grep -q '^0$'; then
+          echo "[axedgb] Seeding initial poolstats row"
+          psql -v ON_ERROR_STOP=1 -h "${DB_HOST}" -p 5432 -U "${DB_USER}" -d "${DB_NAME}" >/dev/null <<'SQL'
+        INSERT INTO poolstats (poolid, connectedminers, poolhashrate, networkhashrate, networkdifficulty, lastnetworkblocktime, blockheight, connectedpeers, sharespersecond, created)
+        VALUES ('dgb-sha256-1', 0, 0, 0, 0, NULL, 0, 0, 0, NOW());
+SQL
         fi
 
   dgbd:
@@ -96,6 +149,7 @@ services:
         condition: service_completed_successfully
     ports:
       - "12024:12024/tcp" # P2P
+      - "12026:12026/tcp" # P2P (testnet)
     volumes:
       - ${APP_DATA_DIR}/data/node:/data
       - ${APP_DATA_DIR}/data/templates/dgb-entrypoint.sh:/dgb-entrypoint.sh:ro
