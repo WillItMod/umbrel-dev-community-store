@@ -47,6 +47,9 @@
       "blockRefreshInterval": 500,
       "jobRebroadcastTimeout": 10,
       "clientConnectionTimeout": 600,
+      "paymentProcessing": {
+        "enabled": false
+      },
       "banning": {
         "enabled": true,
         "time": 600,
