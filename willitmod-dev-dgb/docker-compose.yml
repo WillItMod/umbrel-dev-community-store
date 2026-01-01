@@ -19,6 +19,13 @@ services:
       DGB_RPC_PORT: "14022"
       DGB_ZMQ_HASHBLOCK_PORT: "28344"
       PAYOUT_ADDRESS: "CHANGEME_DGB_PAYOUT_ADDRESS"
+      DB_HOST: "postgres"
+      DB_USER: "miningcore"
+      DB_PASSWORD: "${APP_PASSWORD}"
+      DB_NAME: "miningcore"
+      MINDIFF: "1024"
+      STARTDIFF: "1024"
+      MAXDIFF_JSON: "null"
     command:
       - /bin/sh
       - -ec
@@ -27,16 +34,11 @@ services:
 
         apk add --no-cache envsubst curl >/dev/null
 
-        mkdir -p /data/node /data/pool/config /data/pool/www/pool /data/pool/www/users /data/templates
+        mkdir -p /data/node /data/pool/config /data/pool/postgres /data/templates
 
         # Cleanup from older broken installs (a directory with the script name).
         if [ -d /data/templates/init-entrypoint.sh ]; then
           rm -rf /data/templates/init-entrypoint.sh || true
-        fi
-
-        # Cleanup from older broken installs (a directory with the script name).
-        if [ -d /data/templates/rpcproxy.py ]; then
-          rm -rf /data/templates/rpcproxy.py || true
         fi
 
         if [ ! -f /data/node/digibyte.conf ]; then
@@ -63,35 +65,10 @@ services:
           fi
         fi
 
-        if [ ! -f /data/pool/config/ckpool.conf ]; then
-          envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
-          chown -R 1000:1000 /data/pool
-        else
-          # Migrate older installs to use the internal RPC proxy (forces sha256d templates).
-          if grep -q '\"url\"[[:space:]]*:[[:space:]]*\"dgbd:' /data/pool/config/ckpool.conf; then
-            sed -i 's/\"url\"[[:space:]]*:[[:space:]]*\"dgbd:/\"url\": \"rpcproxy:/' /data/pool/config/ckpool.conf || true
-          fi
-
-          if ! grep -q '"btcaddress"' /data/pool/config/ckpool.conf || ! grep -q '"webdir"' /data/pool/config/ckpool.conf || ! grep -q '"userdir"' /data/pool/config/ckpool.conf; then
-            mv /data/pool/config/ckpool.conf "/data/pool/config/ckpool.conf.bak.$(date +%s 2>/dev/null || echo 0)" || true
-            envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
-            chown -R 1000:1000 /data/pool
-          fi
+        if [ ! -f /data/pool/config/miningcore.json ]; then
+          envsubst < /data/templates/miningcore.json.template > /data/pool/config/miningcore.json
+          chown -R 1000:1000 /data/pool/config || true
         fi
-
-  rpcproxy:
-    image: python:3.12-alpine
-    restart: unless-stopped
-    depends_on:
-      - dgbd
-    environment:
-      TARGET_RPC_URL: http://dgbd:14022/
-      FORCE_ALGO: sha256d
-      LISTEN_HOST: 0.0.0.0
-      LISTEN_PORT: 14022
-    volumes:
-      - ${APP_DATA_DIR}/data/templates/rpcproxy.py:/rpcproxy.py:ro
-    command: ["python", "/rpcproxy.py"]
 
   dgbd:
     image: blocknetdx/digibyte:v7.17.2
@@ -119,23 +96,32 @@ services:
       retries: 20
       start_period: 2m
 
-  ckpool:
-    image: ghcr.io/getumbrel/docker-ckpool-solo:590fb2a
-    command: "-k -B -c /config/ckpool.conf"
-    user: "1000:1000"
-    depends_on:
-      - rpcproxy
-    # ckpool can exit cleanly while the node is still warming up; keep restarting until ready.
+  postgres:
+    image: postgres:16-alpine
     restart: unless-stopped
+    shm_size: "256mb"
+    environment:
+      POSTGRES_USER: "miningcore"
+      POSTGRES_PASSWORD: "${APP_PASSWORD}"
+      POSTGRES_DB: "miningcore"
+    volumes:
+      - ${APP_DATA_DIR}/data/pool/postgres:/var/lib/postgresql/data
+
+  miningcore:
+    image: ghcr.io/oliverw/miningcore:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - dgbd
+      - init
     stop_grace_period: 30s
     ports:
-      - "5678:3333/tcp"
+      - "5678:3333/tcp" # Stratum v1 (SHA256)
     volumes:
-      - ${APP_DATA_DIR}/data/pool/config:/config:ro
-      - ${APP_DATA_DIR}/data/pool/www:/www
+      - ${APP_DATA_DIR}/data/pool/config/miningcore.json:/app/config.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app:0.7.28-alpha
+    image: ghcr.io/willitmod/axedgb-app:0.7.34-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
@@ -151,8 +137,11 @@ services:
       DGB_RPC_PORT: "14022"
       DGB_RPC_USER: "dgb"
       DGB_RPC_PASS: "${APP_PASSWORD}"
-      CKPOOL_STATUS_DIR: "/data/pool/www/pool"
+      MININGCORE_API_URL: "http://miningcore:4000"
+      MININGCORE_POOL_ID: "dgb-sha256-1"
+      MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
       DGB_IMAGE: "blocknetdx/digibyte:v7.17.2"
-      CKPOOL_IMAGE: "ghcr.io/getumbrel/docker-ckpool-solo:590fb2a"
+      MININGCORE_IMAGE: "ghcr.io/oliverw/miningcore:latest"
+      POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"

@@ -2,10 +2,10 @@ manifestVersion: 1
 id: willitmod-dev-dgb
 category: altcoin
 name: AxeDGB
-version: "0.7.33-alpha"
+version: "0.7.34-alpha"
 tagline: DGB node + solo pool
 description: >-
-  Run a DigiByte full node (DigiByte Core) and a solo Stratum v1 pool (ckpool) as a single Umbrel app installation.
+  Run a DigiByte full node (DigiByte Core) and a solo Stratum v1 pool (Miningcore) as a single Umbrel app installation.
 
 
   Features:
@@ -16,29 +16,28 @@ description: >-
   Miner connection:
     - Set your payout address in the app Settings tab.
     - URL: `stratum+tcp://<your-umbrel-ip>:5678`
-    - Username: worker name (optional)
-      Example: `bitaxe-01`
+    - Username: `YOUR_DGB_ADDRESS.<worker-name>` (recommended)
+      Example: `dgb1q...bitaxe-01`
     - Password: anything
 
 
   Notes:
     - Use a DigiByte address (typically Base58 starting with `D`/`S`, or Bech32 starting with `dgb1`).
-    - ckpool is Bitcoin-focused; this is experimental for DigiByte (expect quirks).
+    - Miningcore is used for Stratum + stats API.
     - Solo mining is extremely unlikely to find blocks without significant hashrate.
     - This app generates an anonymous install ID used for support ticket submissions.
 
 
   Backend (provenance):
     - DigiByte Core (MIT): https://github.com/digibyte-core/digibyte
-    - ckpool (GPLv3) solo pool engine: https://github.com/ctubio/ckpool
-    - Pool container image: https://github.com/getumbrel/docker-ckpool-solo
-    - This Umbrel app wires these components together; it does not patch DigiByte/ckpool source code.
+    - Miningcore (GPLv3): https://github.com/oliverw/miningcore
+    - This Umbrel app wires these components together; it does not patch DigiByte/Miningcore source code.
 
 
   Licenses:
     - DigiByte Core: MIT (https://github.com/digibyte-core/digibyte)
-    - ckpool: GPLv3 (https://github.com/ctubio/ckpool)
-    - getumbrel/docker-ckpool-solo: MIT (https://github.com/getumbrel/docker-ckpool-solo)
+    - Miningcore: GPLv3 (https://github.com/oliverw/miningcore)
+    - Postgres: PostgreSQL License (https://www.postgresql.org/about/licence/)
     - Source and license texts for bundled components are available in the upstream repos above.
 
 
