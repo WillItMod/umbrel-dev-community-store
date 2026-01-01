@@ -213,7 +213,7 @@ services:
         fi
 
   dgbd:
-    image: ghcr.io/willitmod/digibyte:8.26.1
+    image: ghcr.io/willitmod/digibyte:8.22.2
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 15m30s
@@ -265,7 +265,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.57-alpha
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.58-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
@@ -285,7 +285,7 @@ services:
       MININGCORE_POOL_ID: "dgb-sha256-1"
       MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
-      DGB_IMAGE: "ghcr.io/willitmod/digibyte:8.26.1"
+      DGB_IMAGE: "ghcr.io/willitmod/digibyte:8.22.2"
       MININGCORE_IMAGE: "ghcr.io/willitmod/miningcore:a553f62301f44c6df80891e408b6526d1dd98692"
       POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"
