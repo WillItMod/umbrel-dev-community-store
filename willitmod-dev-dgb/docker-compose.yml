@@ -108,7 +108,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/postgres:/var/lib/postgresql/data
 
   miningcore:
-    image: ghcr.io/oliverw/miningcore:latest
+    image: ghcr.io/willitmod/miningcore:a553f62301f44c6df80891e408b6526d1dd98692
     restart: unless-stopped
     depends_on:
       - postgres
@@ -142,6 +142,6 @@ services:
       MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
       DGB_IMAGE: "blocknetdx/digibyte:v7.17.2"
-      MININGCORE_IMAGE: "ghcr.io/oliverw/miningcore:latest"
+      MININGCORE_IMAGE: "ghcr.io/willitmod/miningcore:a553f62301f44c6df80891e408b6526d1dd98692"
       POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"
