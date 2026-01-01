@@ -29,6 +29,7 @@ POOL_SERIES_PATH = STATE_DIR / "pool_timeseries.jsonl"
 POOL_SETTINGS_STATE_PATH = STATE_DIR / "pool_settings.json"
 INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
+POOL_CACHE_PATH = STATE_DIR / "pool_cache.json"
 CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
 POOL_PLACEHOLDER_PAYOUT_ADDRESS = "CHANGEME_DGB_PAYOUT_ADDRESS"
 
@@ -51,7 +52,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.55-alpha"
+APP_VERSION = "0.7.56-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -612,6 +613,28 @@ def _read_node_cache():
         return None
 
 
+def _write_pool_cache(status: dict):
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        POOL_CACHE_PATH.write_text(json.dumps({"t": int(time.time()), "status": status}) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _read_pool_cache():
+    try:
+        if not POOL_CACHE_PATH.exists():
+            return None
+        obj = json.loads(POOL_CACHE_PATH.read_text(encoding="utf-8", errors="replace"))
+        t = int(obj.get("t") or 0)
+        status = obj.get("status") or {}
+        if not isinstance(status, dict):
+            return None
+        return {"t": t, "status": status}
+    except Exception:
+        return None
+
+
 def _about():
     node = None
     node_error = None
@@ -919,36 +942,71 @@ def _dget(obj: dict, *keys, default=None):
 
 
 def _pool_status():
-    data = _miningcore_get_json(f"/api/pools/{MININGCORE_POOL_ID}")
-    pool = _dget(data, "pool", "Pool", default={}) or {}
-    stats = _dget(pool, "poolStats", "PoolStats", default={}) or {}
-
-    connected = _dget(stats, "connectedMiners", "ConnectedMiners", default=0) or 0
-    hashrate_hs = _dget(stats, "poolHashrate", "PoolHashrate", default=0) or 0
-    effort = _dget(pool, "poolEffort", "PoolEffort", default=None)
-
     try:
-        workers_i = int(connected)
-    except Exception:
-        workers_i = 0
-    try:
-        hashrate_ths = float(hashrate_hs) / 1e12
-    except Exception:
-        hashrate_ths = None
+        data = _miningcore_get_json(f"/api/pools/{MININGCORE_POOL_ID}")
+        pool = _dget(data, "pool", "Pool", default={}) or {}
+        stats = _dget(pool, "poolStats", "PoolStats", default={}) or {}
 
-    try:
-        effort_pct = float(effort) if effort is not None else None
-    except Exception:
-        effort_pct = None
+        connected = _dget(stats, "connectedMiners", "ConnectedMiners", default=0) or 0
+        hashrate_hs = _dget(stats, "poolHashrate", "PoolHashrate", default=0) or 0
+        effort = _dget(pool, "poolEffort", "PoolEffort", default=None)
 
-    return {
-        "backend": "miningcore",
-        "poolId": MININGCORE_POOL_ID,
-        "workers": workers_i,
-        "hashrate_ths": hashrate_ths,
-        "effort_percent": effort_pct,
-        "hashrates_ths": {},
-    }
+        try:
+            workers_i = int(connected)
+        except Exception:
+            workers_i = 0
+        try:
+            hashrate_ths = float(hashrate_hs) / 1e12
+        except Exception:
+            hashrate_ths = None
+
+        try:
+            effort_pct = float(effort) if effort is not None else None
+        except Exception:
+            effort_pct = None
+
+        status = {
+            "backend": "miningcore",
+            "poolId": MININGCORE_POOL_ID,
+            "workers": workers_i,
+            "hashrate_ths": hashrate_ths,
+            "effort_percent": effort_pct,
+            "hashrates_ths": {},
+            "cached": False,
+            "lastSeen": int(time.time()),
+        }
+        _write_pool_cache(status)
+        return status
+    except Exception as e:
+        cached = _read_pool_cache()
+        if cached:
+            status = dict(cached["status"])
+            status.update(
+                {
+                    "cached": True,
+                    "lastSeen": int(cached["t"]),
+                    "error": str(e),
+                }
+            )
+            status.setdefault("backend", "miningcore")
+            status.setdefault("poolId", MININGCORE_POOL_ID)
+            status.setdefault("workers", 0)
+            status.setdefault("hashrate_ths", None)
+            status.setdefault("effort_percent", None)
+            status.setdefault("hashrates_ths", {})
+            return status
+
+        return {
+            "backend": "miningcore",
+            "poolId": MININGCORE_POOL_ID,
+            "workers": 0,
+            "hashrate_ths": None,
+            "effort_percent": None,
+            "hashrates_ths": {},
+            "cached": False,
+            "lastSeen": int(time.time()),
+            "error": str(e),
+        }
 
 
 def _read_pool_status_raw():
