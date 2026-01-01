@@ -213,7 +213,7 @@ services:
         fi
 
   dgbd:
-    image: blocknetdx/digibyte:v7.17.2
+    image: blocknetdx/digibyte:v8.22.0-rc3-staging
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 15m30s
@@ -285,7 +285,7 @@ services:
       MININGCORE_POOL_ID: "dgb-sha256-1"
       MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
-      DGB_IMAGE: "blocknetdx/digibyte:v7.17.2"
+      DGB_IMAGE: "blocknetdx/digibyte:v8.22.0-rc3-staging"
       MININGCORE_IMAGE: "ghcr.io/willitmod/miningcore:a553f62301f44c6df80891e408b6526d1dd98692"
       POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"
