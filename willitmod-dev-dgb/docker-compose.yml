@@ -116,10 +116,9 @@ services:
             if ! jq -e '.pools[]? | select(.id=="dgb-scrypt-1")' /data/pool/config/miningcore.json >/dev/null 2>&1; then
               echo "[axedgb] Adding dgb-scrypt-1 Miningcore pool"
               base_addr="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | .address // empty' /data/pool/config/miningcore.json | head -n 1)"
-              base_port="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|keys|.[0]) // empty' /data/pool/config/miningcore.json | head -n 1)"
-              base_diff="$(jq -r --arg p "$$base_port" '.pools[]? | select(.id=="dgb-sha256-1") | (.ports[$p].difficulty // 1024)' /data/pool/config/miningcore.json | head -n 1)"
-              base_mindiff="$(jq -r --arg p "$$base_port" '.pools[]? | select(.id=="dgb-sha256-1") | (.ports[$p].varDiff.minDiff // 1024)' /data/pool/config/miningcore.json | head -n 1)"
-              base_maxdiff_json="$(jq -c --arg p "$$base_port" '.pools[]? | select(.id=="dgb-sha256-1") | (.ports[$p].varDiff.maxDiff // null)' /data/pool/config/miningcore.json | head -n 1)"
+              base_diff="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|to_entries[0].value.difficulty // 1024)' /data/pool/config/miningcore.json | head -n 1)"
+              base_mindiff="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|to_entries[0].value.varDiff.minDiff // 1024)' /data/pool/config/miningcore.json | head -n 1)"
+              base_maxdiff_json="$(jq -c '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|to_entries[0].value.varDiff.maxDiff // null)' /data/pool/config/miningcore.json | head -n 1)"
               daemons_json="$(jq -c '.pools[]? | select(.id=="dgb-sha256-1") | (.daemons // [])' /data/pool/config/miningcore.json | head -n 1)"
               if [ -z "$$daemons_json" ]; then daemons_json='[]'; fi
               if [ -z "$$base_maxdiff_json" ]; then base_maxdiff_json='null'; fi
@@ -135,7 +134,7 @@ services:
                    "id": "dgb-scrypt-1",
                    "enabled": true,
                    "coin": "digibyte-scrypt",
-                   "address": $addr,
+                   "address": $$addr,
                    "blockRefreshInterval": 500,
                    "jobRebroadcastTimeout": 10,
                    "clientConnectionTimeout": 600,
@@ -144,17 +143,17 @@ services:
                    "ports": {
                      "3334": {
                        "listenAddress": "0.0.0.0",
-                       "difficulty": $diff,
+                       "difficulty": $$diff,
                        "varDiff": {
-                         "minDiff": $mindiff,
-                         "maxDiff": $maxdiff,
+                         "minDiff": $$mindiff,
+                         "maxDiff": $$maxdiff,
                          "targetTime": 15,
                          "retargetTime": 90,
                          "variancePercent": 30
                        }
                      }
                    },
-                   "daemons": $daemons
+                   "daemons": $$daemons
                  }]
                  ' /data/pool/config/miningcore.json > "$$tmp2" && mv "$$tmp2" /data/pool/config/miningcore.json
             fi
@@ -180,7 +179,7 @@ services:
             "headerHasher": { "hash": "sha256d" },
             "blockHasher": { "hash": "reverse", "args": [ { "hash": "sha256d" } ] },
             "blockTemplateRpcExtraParams": ["sha256d"],
-            "explorerBlockLink": "https://chainz.cryptoid.info/dgb/block.dws?$height$.htm",
+            "explorerBlockLink": "https://chainz.cryptoid.info/dgb/block.dws?$$height$$.htm",
             "explorerTxLink": "https://chainz.cryptoid.info/dgb/tx.dws?{0}.htm",
             "explorerAccountLink": "https://chainz.cryptoid.info/dgb/address.dws?{0}.htm"
           },
@@ -199,7 +198,7 @@ services:
             "blockHasher": { "hash": "reverse", "args": [ { "hash": "sha256d" } ] },
             "shareMultiplier": 65536,
             "blockTemplateRpcExtraParams": ["scrypt"],
-            "explorerBlockLink": "https://chainz.cryptoid.info/dgb/block.dws?$height$.htm",
+            "explorerBlockLink": "https://chainz.cryptoid.info/dgb/block.dws?$$height$$.htm",
             "explorerTxLink": "https://chainz.cryptoid.info/dgb/tx.dws?{0}.htm",
             "explorerAccountLink": "https://chainz.cryptoid.info/dgb/address.dws?{0}.htm"
           }
@@ -322,7 +321,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.59-alpha
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.60-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
