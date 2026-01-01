@@ -48,6 +48,7 @@ def _force_algo(payload: object) -> object:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "axedgb-rpcproxy/1.0"
+    protocol_version = "HTTP/1.0"
 
     def do_POST(self) -> None:
         body = _read_body(self)
@@ -70,10 +71,7 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization")
 
         conn = http.client.HTTPConnection("dgbd", 14022, timeout=15)
-        headers = {
-            "Content-Type": content_type,
-            "Content-Length": str(len(out_body)),
-        }
+        headers = {"Content-Type": content_type, "Content-Length": str(len(out_body))}
         if auth:
             headers["Authorization"] = auth
 
@@ -82,10 +80,9 @@ class Handler(BaseHTTPRequestHandler):
             resp = conn.getresponse()
             resp_body = resp.read()
             self.send_response(resp.status)
-            for key, value in resp.getheaders():
-                if key.lower() in {"connection", "transfer-encoding"}:
-                    continue
-                self.send_header(key, value)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(resp_body)))
+            self.send_header("Connection", "close")
             self.end_headers()
             try:
                 self.wfile.write(resp_body)
