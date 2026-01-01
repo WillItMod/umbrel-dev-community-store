@@ -1,7 +1,7 @@
 {
   "btcd": [
     {
-      "url": "dgbd:${DGB_RPC_PORT}",
+      "url": "rpcproxy:${DGB_RPC_PORT}",
       "auth": "${RPC_USER}",
       "pass": "${RPC_PASSWORD}",
       "notify": true

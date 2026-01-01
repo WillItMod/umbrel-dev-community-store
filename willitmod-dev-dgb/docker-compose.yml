@@ -62,12 +62,31 @@ services:
           envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
           chown -R 1000:1000 /data/pool
         else
+          # Migrate older installs to use the internal RPC proxy (forces sha256d templates).
+          if grep -q '\"url\"[[:space:]]*:[[:space:]]*\"dgbd:' /data/pool/config/ckpool.conf; then
+            sed -i 's/\"url\"[[:space:]]*:[[:space:]]*\"dgbd:/\"url\": \"rpcproxy:/' /data/pool/config/ckpool.conf || true
+          fi
+
           if ! grep -q '"btcaddress"' /data/pool/config/ckpool.conf || ! grep -q '"webdir"' /data/pool/config/ckpool.conf || ! grep -q '"userdir"' /data/pool/config/ckpool.conf; then
             mv /data/pool/config/ckpool.conf "/data/pool/config/ckpool.conf.bak.$(date +%s 2>/dev/null || echo 0)" || true
             envsubst < /data/templates/ckpool.conf.template > /data/pool/config/ckpool.conf
             chown -R 1000:1000 /data/pool
           fi
         fi
+
+  rpcproxy:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    depends_on:
+      - dgbd
+    environment:
+      TARGET_RPC_URL: http://dgbd:14022/
+      FORCE_ALGO: sha256d
+      LISTEN_HOST: 0.0.0.0
+      LISTEN_PORT: 14022
+    volumes:
+      - ${APP_DATA_DIR}/data/templates/rpcproxy.py:/rpcproxy.py:ro
+    command: ["python", "/rpcproxy.py"]
 
   dgbd:
     image: blocknetdx/digibyte:v7.17.2
@@ -100,7 +119,7 @@ services:
     command: "-k -B -c /config/ckpool.conf"
     user: "1000:1000"
     depends_on:
-      - dgbd
+      - rpcproxy
     # ckpool can exit cleanly while the node is still warming up; keep restarting until ready.
     restart: unless-stopped
     stop_grace_period: 30s
