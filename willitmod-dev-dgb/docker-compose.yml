@@ -123,8 +123,7 @@ services:
           sleep 1
         done
 
-        if ! psql -h "$DB_HOST" -p 5432 -U "$DB_USER" -d "$DB_NAME" -tA 2>/dev/null \
-          -c "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='poolstats';" | grep -q '^1$'; then
+        if ! psql -h "$DB_HOST" -p 5432 -U "$DB_USER" -d "$DB_NAME" -tA -c "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='poolstats';" 2>/dev/null | grep -q '^1$'; then
           echo "[axedgb] Initializing Miningcore database schema"
           if [ ! -f /data/templates/miningcore-createdb.sql ]; then
             echo "[axedgb] miningcore-createdb.sql missing; writing built-in schema"
@@ -169,11 +168,9 @@ services:
         fi
 
         # Seed an initial poolstats row so Miningcore's API does not error before the first stats tick.
-        if psql -h "$DB_HOST" -p 5432 -U "$DB_USER" -d "$DB_NAME" -tA 2>/dev/null \
-          -c "SELECT COUNT(*) FROM poolstats WHERE poolid='dgb-sha256-1';" | grep -q '^0$'; then
+        if psql -h "$DB_HOST" -p 5432 -U "$DB_USER" -d "$DB_NAME" -tA -c "SELECT COUNT(*) FROM poolstats WHERE poolid='dgb-sha256-1';" 2>/dev/null | grep -q '^0$'; then
           echo "[axedgb] Seeding initial poolstats row"
-          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p 5432 -U "$DB_USER" -d "$DB_NAME" -c \
-            "INSERT INTO poolstats (poolid, connectedminers, poolhashrate, networkhashrate, networkdifficulty, lastnetworkblocktime, blockheight, connectedpeers, sharespersecond, created) VALUES ('dgb-sha256-1', 0, 0, 0, 0, NULL, 0, 0, 0, NOW());" >/dev/null
+          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p 5432 -U "$DB_USER" -d "$DB_NAME" -c "INSERT INTO poolstats (poolid, connectedminers, poolhashrate, networkhashrate, networkdifficulty, lastnetworkblocktime, blockheight, connectedpeers, sharespersecond, created) VALUES ('dgb-sha256-1', 0, 0, 0, 0, NULL, 0, 0, 0, NOW());" >/dev/null
         fi
 
   dgbd:
