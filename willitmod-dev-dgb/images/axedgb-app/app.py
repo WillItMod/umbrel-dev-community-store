@@ -52,7 +52,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.63-alpha"
+APP_VERSION = "0.7.64-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1054,7 +1054,7 @@ def _update_pool_settings(
     return _pool_settings()
 
 
-def _miningcore_get_json(path: str, *, timeout_s: int = 8) -> dict:
+def _miningcore_get_any(path: str, *, timeout_s: int = 8):
     base = MININGCORE_API_URL
     if not base:
         raise RuntimeError("MININGCORE_API_URL not set")
@@ -1064,6 +1064,13 @@ def _miningcore_get_json(path: str, *, timeout_s: int = 8) -> dict:
     req = urllib.request.Request(url, headers={"accept": "application/json"}, method="GET")
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         return json.loads(resp.read().decode("utf-8", errors="replace"))
+
+
+def _miningcore_get_json(path: str, *, timeout_s: int = 8) -> dict:
+    data = _miningcore_get_any(path, timeout_s=timeout_s)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected JSON object from Miningcore at {path}")
+    return data
 
 
 def _dget(obj: dict, *keys, default=None):
@@ -1187,6 +1194,49 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "lastSeen": int(time.time()),
             "error": str(e),
         }
+
+
+def _pool_miners(pool_id: str):
+    miners = _miningcore_get_any(f"/api/pools/{pool_id}/miners", timeout_s=6)
+    if not isinstance(miners, list):
+        return []
+
+    out = []
+    for item in miners:
+        if not isinstance(item, dict):
+            continue
+
+        miner = str(item.get("miner") or item.get("Miner") or "")
+        worker = item.get("worker") or item.get("Worker") or None
+        if isinstance(worker, str) and worker.strip() == "":
+            worker = None
+
+        hashrate_hs = item.get("hashrate") if "hashrate" in item else item.get("Hashrate")
+        if hashrate_hs is None:
+            hashrate_hs = item.get("hashrate_hs") if "hashrate_hs" in item else item.get("hashrateHs")
+        try:
+            hashrate_hs_f = float(hashrate_hs)
+        except Exception:
+            hashrate_hs_f = None
+        if hashrate_hs_f is not None and not math.isfinite(hashrate_hs_f):
+            hashrate_hs_f = None
+
+        hashrate_ths = None
+        if hashrate_hs_f is not None:
+            hashrate_ths = hashrate_hs_f / 1e12
+
+        out.append(
+            {
+                "miner": miner,
+                "worker": worker,
+                "hashrate_hs": hashrate_hs_f,
+                "hashrate_ths": hashrate_ths,
+                "lastShare": item.get("lastShare") or item.get("LastShare") or None,
+                "sharesPerSecond": item.get("sharesPerSecond") or item.get("SharesPerSecond") or None,
+            }
+        )
+
+    return out
 
 
 def _read_pool_status_raw():
@@ -1784,9 +1834,16 @@ class Handler(BaseHTTPRequestHandler):
                 POOL_LAST_REQUEST_S[pool_id] = time.time()
             return self._send(*_json(_pool_status(pool_id, algo=algo)))
 
-        if self.path == "/api/pool/workers":
-            # The current UI only uses aggregated worker count from /api/pool.
-            return self._send(*_json({"workers": []}))
+        if path == "/api/pool/miners" or path == "/api/pool/workers":
+            algo = _algo_from_query(raw_path)
+            pool_id = _pool_id_for_algo(algo)
+            with POOL_LAST_REQUEST_LOCK:
+                POOL_LAST_REQUEST_S[pool_id] = time.time()
+            try:
+                miners = _pool_miners(pool_id)
+                return self._send(*_json({"poolId": pool_id, "algo": algo, "miners": miners}))
+            except Exception as e:
+                return self._send(*_json({"poolId": pool_id, "algo": algo, "miners": [], "error": str(e)}, status=503))
 
         if path.startswith("/api/timeseries/pool"):
             try:

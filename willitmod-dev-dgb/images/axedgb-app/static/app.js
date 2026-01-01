@@ -265,6 +265,94 @@ function escapeHtml(s) {
     .replaceAll("'", '&#039;');
 }
 
+function shortenMiner(s) {
+  if (!s) return '-';
+  const str = String(s);
+  if (str.length <= 20) return str;
+  return `${str.slice(0, 10)}…${str.slice(-8)}`;
+}
+
+function formatAge(v) {
+  if (v == null) return '-';
+  const n = Number(v);
+  let ms = 0;
+  if (Number.isFinite(n) && n > 0) {
+    ms = n > 1e12 ? n : n * 1000;
+  } else {
+    const parsed = Date.parse(String(v));
+    if (!Number.isFinite(parsed)) return '-';
+    ms = parsed;
+  }
+
+  const ageS = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (ageS < 60) return `${ageS}s`;
+  const ageM = Math.floor(ageS / 60);
+  if (ageM < 60) return `${ageM}m`;
+  const ageH = Math.floor(ageM / 60);
+  return `${ageH}h`;
+}
+
+function renderWorkerDetails(miners) {
+  const status = document.getElementById('worker-details-status');
+  const rows = document.getElementById('worker-details-rows');
+  if (!rows) return;
+
+  rows.innerHTML = '';
+  const list = Array.isArray(miners) ? miners : [];
+  if (!list.length) {
+    if (status) status.textContent = 'No workers connected yet.';
+    rows.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400">Connect a miner to see per-worker stats.</div>';
+    return;
+  }
+
+  if (status) status.textContent = `${list.length} worker${list.length === 1 ? '' : 's'} seen (best-effort)`;
+
+  for (const m of list.slice(0, 50)) {
+    const name = m.worker ? String(m.worker) : shortenMiner(m.miner);
+    const sub = m.worker ? shortenMiner(m.miner) : '';
+    const hr = formatHashrateFromTHS(m.hashrate_ths);
+    const last = formatAge(m.lastShare);
+
+    const left = `
+      <div class="min-w-0">
+        <div class="truncate font-mono text-sm text-white axe-shadow-heavy">${escapeHtml(name)}</div>
+        ${sub ? `<div class="truncate font-mono text-[11px] text-slate-400">${escapeHtml(sub)}</div>` : ''}
+      </div>
+    `;
+
+    const right = `
+      <div class="text-right">
+        <div class="font-mono text-sm text-white axe-shadow-heavy">${escapeHtml(hr)}</div>
+        <div class="font-mono text-[11px] text-slate-400">${escapeHtml(last)}</div>
+      </div>
+    `;
+
+    const el = document.createElement('div');
+    el.className = 'flex items-center justify-between gap-3 px-3 py-2';
+    el.innerHTML = left + right;
+    rows.appendChild(el);
+  }
+
+  if (list.length > 50) {
+    const more = document.createElement('div');
+    more.className = 'px-3 py-2 text-xs text-slate-400';
+    more.textContent = `Showing first 50 of ${list.length}.`;
+    rows.appendChild(more);
+  }
+}
+
+async function refreshWorkerDetails(algo) {
+  try {
+    const data = await fetchJson(`/api/pool/miners?algo=${encodeURIComponent(algo || 'sha256')}`);
+    renderWorkerDetails((data && data.miners) || []);
+  } catch {
+    const status = document.getElementById('worker-details-status');
+    const rows = document.getElementById('worker-details-rows');
+    if (status) status.textContent = 'Worker stats unavailable (app starting).';
+    if (rows) rows.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400">-</div>';
+  }
+}
+
 function getAlgo() {
   const el = document.getElementById('algo');
   const saved = localStorage.getItem('dgbAlgo');
@@ -378,6 +466,8 @@ async function refresh() {
     if (lg5m) lg5m.textContent = formatHashrateFromTHS(h['5m']);
     if (lg15m) lg15m.textContent = formatHashrateFromTHS(h['15m']);
     if (lg1h) lg1h.textContent = formatHashrateFromTHS(h['1h']);
+
+    await refreshWorkerDetails(algo);
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
@@ -397,6 +487,8 @@ async function refresh() {
       const el = document.getElementById(id);
       if (el) el.textContent = '-';
     }
+
+    renderWorkerDetails([]);
   }
 
 }
