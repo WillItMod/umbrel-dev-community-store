@@ -63,19 +63,29 @@ services:
           fi
           if ! grep -q '^rpcworkqueue=' /data/node/digibyte.conf; then
             echo "[axedgb] Adding rpcworkqueue=128 to digibyte.conf"
-            {
-              printf "\n"
-              printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
-              printf "rpcworkqueue=128\n"
-            } >> /data/node/digibyte.conf
+            if grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
+              tmp="/data/node/digibyte.conf.tmp"
+              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcworkqueue=128"; added=1}} {print}' /data/node/digibyte.conf > "$tmp" && mv "$tmp" /data/node/digibyte.conf
+            else
+              {
+                printf "\n"
+                printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
+                printf "rpcworkqueue=128\n"
+              } >> /data/node/digibyte.conf
+            fi
           fi
           if ! grep -q '^rpcthreads=' /data/node/digibyte.conf; then
             echo "[axedgb] Adding rpcthreads=16 to digibyte.conf"
-            {
-              printf "\n"
-              printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
-              printf "rpcthreads=16\n"
-            } >> /data/node/digibyte.conf
+            if grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
+              tmp="/data/node/digibyte.conf.tmp"
+              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcthreads=16"; added=1}} {print}' /data/node/digibyte.conf > "$tmp" && mv "$tmp" /data/node/digibyte.conf
+            else
+              {
+                printf "\n"
+                printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
+                printf "rpcthreads=16\n"
+              } >> /data/node/digibyte.conf
+            fi
           fi
           if ! grep -q 'axedgb-seeds-v1' /data/node/digibyte.conf; then
             echo "[axedgb] Adding bootstrap peers to digibyte.conf"
