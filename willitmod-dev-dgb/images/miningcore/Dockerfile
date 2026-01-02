@@ -2,47 +2,32 @@ FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS builder
 
 WORKDIR /src
 
-RUN apt-get update && apt-get -y install --no-install-recommends \
-  build-essential \
-  libssl-dev \
-  pkg-config \
-  libboost-all-dev \
-  libsodium-dev \
-  libzmq5 \
-  libzmq3-dev \
-  ca-certificates \
-  curl \
-  && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get -y install --no-install-recommends \
+      build-essential \
+      libssl-dev \
+      pkg-config \
+      libboost-all-dev \
+      libsodium-dev \
+      libzmq5 \
+      libzmq3-dev \
+      ca-certificates \
+      curl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Miningcore source is provided as the Docker build context by the GitHub Actions workflow.
 COPY . .
 
-# Build a minimal libmultihash for Scrypt (portable across amd64/arm64).
-RUN set -eux; \
-  mkdir -p /tmp/axedgb-multihash; \
-  printf '%s\n' \
-    '#include <stdint.h>' \
-    'void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);' \
-    '__attribute__((visibility("default"))) void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)' \
-    '{' \
-    '  scrypt_N_R_1_256(input, output, N, R, input_len);' \
-    '}' \
-    > /tmp/axedgb-multihash/exports_min.c; \
-  gcc --version; \
-  test -f /src/src/Native/libmultihash/scryptn.c; \
-  test -f /src/src/Native/libmultihash/scryptn.h; \
-  test -f /src/src/Native/libmultihash/sha256.h; \
-  gcc -shared -fPIC -O2 -std=gnu11 \
-    -o /tmp/axedgb-multihash/libmultihash.so \
-    /tmp/axedgb-multihash/exports_min.c \
-    /src/src/Native/libmultihash/scryptn.c
+# Build the native multihash library (required for scrypt and several other algos).
+WORKDIR /src/src/Native/libmultihash
+RUN make clean && make
 
 # Publish Miningcore binaries.
 WORKDIR /src/src/Miningcore
 RUN dotnet publish -c Release --framework net6.0 -o /out
 
 # Copy native library next to the published binary.
-RUN cp /tmp/axedgb-multihash/libmultihash.so /out/libmultihash.so
+RUN cp /src/src/Native/libmultihash/libmultihash.so /out/libmultihash.so
 
 FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
 
