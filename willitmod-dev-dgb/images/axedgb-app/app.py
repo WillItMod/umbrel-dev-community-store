@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.68-alpha"
+APP_VERSION = "0.8.10"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -123,7 +123,7 @@ def _read_static(rel_path: str):
 
 def _parse_pool_ids(raw: str) -> dict[str, str]:
     """
-    Parse MININGCORE_POOL_IDS like: "sha256:dgb-sha256-1,scrypt:dgb-scrypt-1".
+    Parse MININGCORE_POOL_IDS like: "sha256:dgb-sha256-1".
     """
     out: dict[str, str] = {}
     for part in (raw or "").split(","):
@@ -172,7 +172,7 @@ def _stratum_ports() -> dict[str, int]:
     ports = _parse_ports(STRATUM_PORTS)
     if ports:
         return ports
-    return {"sha256": 5678, "scrypt": 5679}
+    return {"sha256": 5678}
 
 
 def _algo_from_query(path: str) -> str | None:
@@ -1025,11 +1025,9 @@ def _update_pool_settings(
     algo_to_pool_id = _pool_ids()
     algo_to_coin = {
         "sha256": "digibyte-sha256",
-        "scrypt": "digibyte-scrypt",
     }
     algo_to_port = {
         "sha256": "3333",
-        "scrypt": "3334",
     }
     try:
         def upsert(pool_id: str, *, coin: str | None, port: str):

@@ -374,17 +374,14 @@ async function refreshWorkerDetails(algo) {
 }
 
 function getAlgo() {
-  const el = document.getElementById('algo');
-  const saved = localStorage.getItem('dgbAlgo');
-  if (saved && el && el.value !== saved) el.value = saved;
-  return (el && el.value) || saved || 'sha256';
+  return 'sha256';
 }
 
 function getStratumPort(algo) {
   const ports = window.__stratumPorts || {};
   const p = ports && typeof ports === 'object' ? Number(ports[algo]) : NaN;
   if (Number.isFinite(p) && p > 0) return p;
-  return algo === 'scrypt' ? 5679 : 5678;
+  return 5678;
 }
 
 async function refresh() {
@@ -476,7 +473,7 @@ async function refresh() {
     if (diffEl) diffEl.textContent = formatCompactNumber(pool && pool.network_difficulty);
     if (diffSub) {
       const height = pool && pool.network_height ? ` | height ${pool.network_height}` : '';
-      diffSub.textContent = `${algo === 'scrypt' ? 'Scrypt' : 'SHA256d'}${height}`;
+      diffSub.textContent = `SHA256d${height}`;
     }
 
     const banner = document.getElementById('block-found-banner');
