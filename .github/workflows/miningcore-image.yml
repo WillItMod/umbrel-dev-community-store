@@ -59,7 +59,10 @@ jobs:
             -t ghcr.io/willitmod/miningcore:${TAG} \
             --push \
             ./_vendor/miningcore 2>&1 | tee /tmp/buildx.log; then
-            msg="$(tail -n 200 /tmp/buildx.log | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
-            echo "::error title=buildx tail (last 200 lines)::${msg}"
+            # GitHub limits annotation size; keep this short and focused.
+            tail_msg="$(tail -n 80 /tmp/buildx.log | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
+            err_msg="$(grep -Ei '(^|[^a-z])error:|^ERROR:' /tmp/buildx.log | tail -n 80 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
+            echo "::error title=buildx errors (last matches)::${err_msg}"
+            echo "::error title=buildx tail (last 80 lines)::${tail_msg}"
             exit 1
           fi
