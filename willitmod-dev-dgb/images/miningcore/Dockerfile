@@ -20,16 +20,13 @@ RUN apt-get update && \
 # Miningcore source is provided as the Docker build context by the GitHub Actions workflow.
 COPY . .
 
-# Build the native multihash library (required for scrypt and several other algos).
-WORKDIR /src/src/Native/libmultihash
-RUN make clean && make
-
 # Publish Miningcore binaries.
 WORKDIR /src/src/Miningcore
 RUN dotnet publish -c Release --framework net6.0 -o /out
 
 # Copy native library next to the published binary.
-RUN cp /src/src/Native/libmultihash/libmultihash.so /out/libmultihash.so
+RUN (cp /src/src/Miningcore/bin/Release/net6.0/publish/libmultihash.so /out/libmultihash.so || \
+     cp /src/src/Miningcore/bin/Release/net6.0/libmultihash.so /out/libmultihash.so)
 
 FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
 
