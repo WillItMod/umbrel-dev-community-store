@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: oliverw/miningcore
+          ref: a553f62301f44c6df80891e408b6526d1dd98692
           path: _vendor/miningcore
           fetch-depth: 1
 
