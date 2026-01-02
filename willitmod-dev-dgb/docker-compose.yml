@@ -64,8 +64,7 @@ services:
           if ! grep -q '^rpcworkqueue=' /data/node/digibyte.conf; then
             echo "[axedgb] Adding rpcworkqueue=128 to digibyte.conf"
             if grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
-              tmp="/data/node/digibyte.conf.tmp"
-              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcworkqueue=128"; added=1}} {print}' /data/node/digibyte.conf > "$tmp" && mv "$tmp" /data/node/digibyte.conf
+              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcworkqueue=128"; added=1}} {print}' /data/node/digibyte.conf > /data/node/digibyte.conf.tmp && mv /data/node/digibyte.conf.tmp /data/node/digibyte.conf
             else
               {
                 printf "\n"
@@ -77,8 +76,7 @@ services:
           if ! grep -q '^rpcthreads=' /data/node/digibyte.conf; then
             echo "[axedgb] Adding rpcthreads=16 to digibyte.conf"
             if grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
-              tmp="/data/node/digibyte.conf.tmp"
-              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcthreads=16"; added=1}} {print}' /data/node/digibyte.conf > "$tmp" && mv "$tmp" /data/node/digibyte.conf
+              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcthreads=16"; added=1}} {print}' /data/node/digibyte.conf > /data/node/digibyte.conf.tmp && mv /data/node/digibyte.conf.tmp /data/node/digibyte.conf
             else
               {
                 printf "\n"
