@@ -709,6 +709,27 @@ async function refreshCharts() {
     const algo = getAlgo();
     const series = await fetchJson(`/api/timeseries/pool?algo=${encodeURIComponent(algo)}&trail=${encodeURIComponent(trail)}`);
     const points = (series && series.points) || [];
+    // Ensure charts end at the current live values (series can lag behind after restarts).
+    try {
+      const live = await fetchJson(`/api/pool?algo=${encodeURIComponent(algo)}`);
+      if (live && typeof live === 'object') {
+        const patch = (obj) => {
+          obj.workers = live.workers;
+          obj.hashrate_ths = live.hashrate_ths;
+          obj.network_difficulty = live.network_difficulty;
+          obj.network_height = live.network_height;
+          const h = (live && live.hashrates_ths) || {};
+          obj.hashrate_1m_ths = h['1m'];
+          obj.hashrate_5m_ths = h['5m'];
+          obj.hashrate_15m_ths = h['15m'];
+          obj.hashrate_1h_ths = h['1h'];
+        };
+        if (points.length) patch(points[points.length - 1]);
+        else points.push({ t: Date.now(), ...live });
+      }
+    } catch {
+      // ignore
+    }
     const workers = points.map((p) => ({ v: Number(p.workers) || 0 }));
     drawSparkline(document.getElementById('chart-workers'), workers, { format: (v) => String(Math.round(v)) });
 

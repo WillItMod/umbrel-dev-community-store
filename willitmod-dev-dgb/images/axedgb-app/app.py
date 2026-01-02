@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.17"
+APP_VERSION = "0.8.18"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -73,7 +73,7 @@ DGB_RPC_PASS = os.getenv("DGB_RPC_PASS", "")
 SAMPLE_INTERVAL_S = int(os.getenv("SERIES_SAMPLE_INTERVAL_S", "30"))
 MAX_RETENTION_S = int(os.getenv("SERIES_MAX_RETENTION_S", str(7 * 24 * 60 * 60)))
 MAX_SERIES_POINTS = int(os.getenv("SERIES_MAX_POINTS", "20000"))
-WORKER_STALE_SECONDS = int(os.getenv("WORKER_STALE_SECONDS", "900"))
+WORKER_STALE_SECONDS = int(os.getenv("WORKER_STALE_SECONDS", "180"))
 
 INSTALL_ID = None
 
