@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Umbrel's auth-server signs tokens with JWT_SECRET. In some legacy-compat paths
-# this isn't exported for apps, so app_proxy ends up verifying with the wrong key.
-# Read it from Umbrel's .env if available so app_proxy can validate Umbrel JWTs.
+# Umbrel's auth-server signs tokens with JWT_SECRET (not UMBREL_AUTH_SECRET).
+# In legacy-compat flows, JWT_SECRET is not consistently passed through to apps.
+# If it's missing, read it from the running `auth` container so app_proxy can
+# validate Umbrel JWTs reliably.
 
-if [[ -z "${JWT_SECRET:-}" ]] && [[ -n "${UMBREL_ROOT:-}" ]] && [[ -f "${UMBREL_ROOT}/.env" ]]; then
-  jwt_line="$(grep -E '^JWT_SECRET=' "${UMBREL_ROOT}/.env" 2>/dev/null | tail -n 1 || true)"
-  if [[ -n "${jwt_line}" ]]; then
-    jwt_val="${jwt_line#JWT_SECRET=}"
-    jwt_val="${jwt_val%\"}"; jwt_val="${jwt_val#\"}"
-    jwt_val="${jwt_val%\'}"; jwt_val="${jwt_val#\'}"
-    if [[ -n "${jwt_val}" ]]; then
-      export JWT_SECRET="${jwt_val}"
-    fi
+if [[ -z "${JWT_SECRET:-}" ]] && command -v docker >/dev/null 2>&1; then
+  jwt_secret_from_auth="$(
+    docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' auth 2>/dev/null \
+      | sed -n 's/^JWT_SECRET=//p' \
+      | tail -n 1
+  )"
+
+  if [[ -n "${jwt_secret_from_auth:-}" ]]; then
+    export JWT_SECRET="${jwt_secret_from_auth}"
   fi
 fi
 
-# Last-resort fallback (may not match Umbrel auth tokens, but avoids empty secret).
-export JWT_SECRET="${JWT_SECRET:-${UMBREL_AUTH_SECRET:-DEADBEEF}}"
-
+# Last-resort fallback (keeps proxy from crashing, but won't match Umbrel auth tokens).
+export JWT_SECRET="${JWT_SECRET:-DEADBEEF}"
