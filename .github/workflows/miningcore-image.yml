@@ -27,6 +27,12 @@ jobs:
           path: _vendor/miningcore
           fetch-depth: 1
 
+      - name: Ensure upstream checkout has a branch (GitVersion)
+        run: |
+          set -eux
+          cd _vendor/miningcore
+          git checkout -b axedgb-pinned
+
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
