@@ -42,13 +42,24 @@ jobs:
         run: |
           echo "tag=$(cat willitmod-dev-dgb/images/miningcore/VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./_vendor/miningcore
-          file: ./willitmod-dev-dgb/images/miningcore/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/willitmod/miningcore:${{ steps.tag.outputs.tag }}
-          provenance: false
+      - name: Build and push (plain progress)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          set -x
+
+          if ! docker buildx build \
+            --progress=plain \
+            --platform linux/amd64,linux/arm64 \
+            -f ./willitmod-dev-dgb/images/miningcore/Dockerfile \
+            -t ghcr.io/willitmod/miningcore:${TAG} \
+            --push \
+            ./_vendor/miningcore 2>&1 | tee /tmp/buildx.log; then
+            # GitHub limits annotation size; keep this short and focused.
+            tail_msg="$(tail -n 80 /tmp/buildx.log | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
+            err_msg="$(grep -Ei '(^|[^a-z])error:|^ERROR:' /tmp/buildx.log | tail -n 80 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
+            echo "::error title=buildx errors (last matches)::${err_msg}"
+            echo "::error title=buildx tail (last 80 lines)::${tail_msg}"
+            exit 1
+          fi
