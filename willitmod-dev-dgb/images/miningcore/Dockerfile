@@ -36,11 +36,7 @@ RUN set -eux; \
 
 # Publish Miningcore binaries.
 WORKDIR /src/src/Miningcore
-
-# Disable upstream BuildNativeLibsLinux target (RandomX/RandomARQ etc) - AxeDGB only needs Scrypt.
-RUN perl -0777 -i -pe 's/Condition=\"\\x27\\$\\(IsLinux\\)\\x27 == \\x27true\\x27\"/Condition=\"\\x27\\$\\(IsLinux\\)\\x27 == \\x27true\\x27 and \\x27\\$\\(AXEDGB_SKIP_NATIVE_LIBS\\)\\x27 != \\x27true\\x27\"/g' Miningcore.csproj
-
-RUN dotnet publish -c Release --framework net6.0 -o /out -p:AXEDGB_SKIP_NATIVE_LIBS=true
+RUN dotnet publish -c Release --framework net6.0 -o /out -p:IsLinux=false
 
 # Copy native library next to the published binary.
 RUN cp /tmp/axedgb-multihash/libmultihash.so /out/libmultihash.so
