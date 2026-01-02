@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.10"
+APP_VERSION = "0.8.16"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -75,6 +75,14 @@ MAX_RETENTION_S = int(os.getenv("SERIES_MAX_RETENTION_S", str(7 * 24 * 60 * 60))
 MAX_SERIES_POINTS = int(os.getenv("SERIES_MAX_POINTS", "20000"))
 
 INSTALL_ID = None
+
+_PG_CONF_CACHE = None
+_PG_CONF_CACHE_T = 0.0
+_PG_CONF_LOCK = threading.Lock()
+
+_POOL_WORKERS_CACHE: dict[str, dict] = {}
+_POOL_WORKERS_LOCK = threading.Lock()
+_POOL_WORKERS_TTL_S = 5.0
 
 
 class RpcError(RuntimeError):
@@ -119,6 +127,135 @@ def _read_static(rel_path: str):
             pass
 
     return 200, path.read_bytes(), content_type
+
+
+def _pg_conf():
+    """
+    Return Miningcore Postgres config from miningcore.json.
+    Cached because UI polls frequently.
+    """
+    global _PG_CONF_CACHE, _PG_CONF_CACHE_T
+    now = time.time()
+    with _PG_CONF_LOCK:
+        if _PG_CONF_CACHE is not None and (now - _PG_CONF_CACHE_T) < 30:
+            return _PG_CONF_CACHE
+        try:
+            raw = MININGCORE_CONF_PATH.read_text(encoding="utf-8", errors="replace")
+            cfg = json.loads(raw) if raw.strip() else {}
+            pg = (((cfg or {}).get("persistence") or {}).get("postgres") or {})
+            if not isinstance(pg, dict):
+                pg = {}
+            out = {
+                "host": str(pg.get("host") or "postgres"),
+                "port": int(pg.get("port") or 5432),
+                "database": str(pg.get("database") or "miningcore"),
+                "user": str(pg.get("user") or "miningcore"),
+                "password": str(pg.get("password") or ""),
+            }
+            _PG_CONF_CACHE = out
+            _PG_CONF_CACHE_T = now
+            return out
+        except Exception:
+            _PG_CONF_CACHE = None
+            _PG_CONF_CACHE_T = now
+            return None
+
+
+def _pool_workers_from_db(pool_id: str):
+    """
+    Miningcore's /miners endpoint aggregates by payout address and may not expose per-worker rows.
+    The minerstats table retains per-(miner, worker) rows, so use it for accurate worker lists.
+    """
+    if pg8000 is None:
+        return None
+    pg = _pg_conf()
+    if not pg or not pg.get("password"):
+        return None
+
+    now = time.time()
+    with _POOL_WORKERS_LOCK:
+        cached = _POOL_WORKERS_CACHE.get(pool_id)
+        if cached and (now - float(cached.get("t") or 0)) < _POOL_WORKERS_TTL_S:
+            return cached.get("workers") or []
+
+    try:
+        conn = pg8000.connect(
+            host=pg["host"],
+            port=pg["port"],
+            user=pg["user"],
+            password=pg["password"],
+            database=pg["database"],
+            timeout=3,
+        )
+    except Exception:
+        return None
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT ON (miner, worker)
+              miner, worker, hashrate, sharespersecond, created
+            FROM minerstats
+            WHERE poolid = %s
+            ORDER BY miner, worker, created DESC
+            """,
+            (pool_id,),
+        )
+        rows = cur.fetchall() or []
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    out = []
+    for r in rows:
+        try:
+            miner, worker, hashrate_hs, shares_per_s, created = r
+        except Exception:
+            continue
+
+        miner_s = str(miner or "")
+        worker_s = str(worker or "").strip() or None
+
+        try:
+            hashrate_hs_f = float(hashrate_hs) if hashrate_hs is not None else None
+        except Exception:
+            hashrate_hs_f = None
+        if hashrate_hs_f is not None and not math.isfinite(hashrate_hs_f):
+            hashrate_hs_f = None
+
+        hashrate_ths = None
+        if hashrate_hs_f is not None:
+            hashrate_ths = hashrate_hs_f / 1e12
+
+        last_share = None
+        try:
+            if isinstance(created, datetime):
+                last_share = created.astimezone(timezone.utc).isoformat()
+            elif created is not None:
+                last_share = str(created)
+        except Exception:
+            last_share = None
+
+        out.append(
+            {
+                "miner": miner_s,
+                "worker": worker_s,
+                "hashrate_hs": hashrate_hs_f,
+                "hashrate_ths": hashrate_ths,
+                "lastShare": last_share,
+                "sharesPerSecond": shares_per_s,
+            }
+        )
+
+    out.sort(key=lambda m: float(m.get("hashrate_hs") or 0), reverse=True)
+    with _POOL_WORKERS_LOCK:
+        _POOL_WORKERS_CACHE[pool_id] = {"t": now, "workers": out}
+    return out
 
 
 def _parse_pool_ids(raw: str) -> dict[str, str]:
@@ -1197,14 +1334,23 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
         network_difficulty = _dget(netstats, "networkDifficulty", "NetworkDifficulty", default=None)
         network_height = _dget(netstats, "blockHeight", "BlockHeight", default=None)
 
-        try:
-            workers_i = int(connected)
-        except Exception:
-            workers_i = 0
-        try:
-            hashrate_ths = float(hashrate_hs) / 1e12
-        except Exception:
-            hashrate_ths = None
+        workers_rows = _pool_workers_from_db(pool_id) or []
+        if workers_rows:
+            workers_i = len(workers_rows)
+            try:
+                total_hs = sum(float(w.get("hashrate_hs") or 0) for w in workers_rows)
+            except Exception:
+                total_hs = 0.0
+            hashrate_ths = (total_hs / 1e12) if total_hs > 0 else None
+        else:
+            try:
+                workers_i = int(connected)
+            except Exception:
+                workers_i = 0
+            try:
+                hashrate_ths = float(hashrate_hs) / 1e12
+            except Exception:
+                hashrate_ths = None
 
         try:
             best = _pool_best_difficulties(pool_id)
@@ -1289,6 +1435,10 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
 
 
 def _pool_miners(pool_id: str):
+    db_rows = _pool_workers_from_db(pool_id)
+    if isinstance(db_rows, list) and db_rows:
+        return db_rows
+
     miners = _miningcore_get_any(f"/api/pools/{pool_id}/miners", timeout_s=6)
     if not isinstance(miners, list):
         return []
