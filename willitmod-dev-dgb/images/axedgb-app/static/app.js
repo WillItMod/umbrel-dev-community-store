@@ -315,17 +315,36 @@ function formatAge(v) {
 function renderWorkerDetails(miners) {
   const status = document.getElementById('worker-details-status');
   const rows = document.getElementById('worker-details-rows');
+  const lastShareEl = document.getElementById('last-share');
   if (!rows) return;
 
   rows.innerHTML = '';
   const list = Array.isArray(miners) ? miners : [];
   if (!list.length) {
     if (status) status.textContent = 'No workers connected yet.';
+    if (lastShareEl) lastShareEl.textContent = '-';
     rows.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400">Connect a miner to see per-worker stats.</div>';
     return;
   }
 
-  if (status) status.textContent = `${list.length} worker${list.length === 1 ? '' : 's'} seen (best-effort)`;
+  if (status) status.textContent = `${list.length} worker${list.length === 1 ? '' : 's'} connected`;
+
+  if (lastShareEl) {
+    let newestMs = 0;
+    for (const m of list) {
+      const v = m && m.lastShare;
+      if (v == null) continue;
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) {
+        const ms = n > 1e12 ? n : n * 1000;
+        if (ms > newestMs) newestMs = ms;
+        continue;
+      }
+      const parsed = Date.parse(String(v));
+      if (Number.isFinite(parsed) && parsed > newestMs) newestMs = parsed;
+    }
+    lastShareEl.textContent = newestMs ? `${formatAge(newestMs)} ago` : '-';
+  }
 
   for (const m of list.slice(0, 50)) {
     const name = m.worker ? String(m.worker) : shortenMiner(m.miner);
@@ -521,6 +540,8 @@ async function refresh() {
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
+    const lastShareEl = document.getElementById('last-share');
+    if (lastShareEl) lastShareEl.textContent = '-';
     document.getElementById('workers-summary').textContent = '-';
     document.getElementById('hashrate-summary').textContent = '-';
     const bestIds = ['bestdiff-since', 'bestdiff-all', 'bestdiff-summary'];

@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.16"
+APP_VERSION = "0.8.17"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -73,6 +73,7 @@ DGB_RPC_PASS = os.getenv("DGB_RPC_PASS", "")
 SAMPLE_INTERVAL_S = int(os.getenv("SERIES_SAMPLE_INTERVAL_S", "30"))
 MAX_RETENTION_S = int(os.getenv("SERIES_MAX_RETENTION_S", str(7 * 24 * 60 * 60)))
 MAX_SERIES_POINTS = int(os.getenv("SERIES_MAX_POINTS", "20000"))
+WORKER_STALE_SECONDS = int(os.getenv("WORKER_STALE_SECONDS", "900"))
 
 INSTALL_ID = None
 
@@ -228,6 +229,15 @@ def _pool_workers_from_db(pool_id: str):
         if hashrate_hs_f is not None and not math.isfinite(hashrate_hs_f):
             hashrate_hs_f = None
 
+        created_dt = created if isinstance(created, datetime) else None
+        if created_dt is not None:
+            try:
+                age_s = (datetime.now(timezone.utc) - created_dt.astimezone(timezone.utc)).total_seconds()
+                if WORKER_STALE_SECONDS > 0 and age_s > WORKER_STALE_SECONDS:
+                    continue
+            except Exception:
+                pass
+
         hashrate_ths = None
         if hashrate_hs_f is not None:
             hashrate_ths = hashrate_hs_f / 1e12
@@ -251,6 +261,12 @@ def _pool_workers_from_db(pool_id: str):
                 "sharesPerSecond": shares_per_s,
             }
         )
+
+    # Miningcore can emit both per-worker rows and an aggregate (worker=null) row for the same miner.
+    # If we have any named workers, hide the aggregate row so the UI doesn't under/over-count workers.
+    has_named = any(isinstance(m.get("worker"), str) and m.get("worker") for m in out)
+    if has_named:
+        out = [m for m in out if m.get("worker")]
 
     out.sort(key=lambda m: float(m.get("hashrate_hs") or 0), reverse=True)
     with _POOL_WORKERS_LOCK:

@@ -143,6 +143,7 @@ services:
                   if type=="object" then
                     (.paymentProcessing = (.paymentProcessing // {"enabled": false}))
                     | (.blockRefreshInterval = ((.blockRefreshInterval // 500) | if . < 2000 then 2000 else . end))
+                    | (.ports |= (if type=="object" then with_entries(.value |= (if type=="object" then (.listenAddress="0.0.0.0") else . end)) else . end))
                     | (.daemons = ((.daemons // []) | (if type=="array" then map(if type=="object" then (.port=$rpcport) else . end) else . end)))
                   else . end
                 ) else . end))
@@ -178,7 +179,7 @@ services:
                    "banning": {"enabled": true, "time": 600, "invalidPercent": 50, "checkThreshold": 50},
                    "ports": {
                      "3334": {
-                       "listenAddress": "127.0.0.1",
+                       "listenAddress": "0.0.0.0",
                        "difficulty": $$diff,
                        "varDiff": {
                          "minDiff": $$mindiff,
@@ -357,7 +358,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.10
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.17
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
