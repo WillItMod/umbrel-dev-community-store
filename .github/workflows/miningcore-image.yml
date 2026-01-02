@@ -25,7 +25,7 @@ jobs:
           repository: oliverw/miningcore
           ref: a553f62301f44c6df80891e408b6526d1dd98692
           path: _vendor/miningcore
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Ensure upstream checkout has a branch (GitVersion)
         run: |
