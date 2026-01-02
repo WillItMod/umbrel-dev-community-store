@@ -22,11 +22,14 @@ COPY . .
 RUN mkdir -p /tmp/axedgb-multihash && \
     cat > /tmp/axedgb-multihash/exports_min.cpp <<'EOF'\n#include <stdint.h>\nextern \"C\" {\n  void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);\n}\nextern \"C\" void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)\n{\n  scrypt_N_R_1_256(input, output, N, R, input_len);\n}\nEOF
 
-RUN g++ -shared -fPIC -O2 -std=c++11 \
+RUN gcc -c -fPIC -O2 \
       -I/src/src/Native/libmultihash \
+      -o /tmp/axedgb-multihash/scryptn.o \
+      /src/src/Native/libmultihash/scryptn.c && \
+    g++ -shared -fPIC -O2 -std=c++11 \
       -o /tmp/axedgb-multihash/libmultihash.so \
       /tmp/axedgb-multihash/exports_min.cpp \
-      /src/src/Native/libmultihash/scryptn.c
+      /tmp/axedgb-multihash/scryptn.o
 
 # Publish Miningcore binaries.
 WORKDIR /src/src/Miningcore
