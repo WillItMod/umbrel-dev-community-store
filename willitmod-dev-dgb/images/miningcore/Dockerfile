@@ -2,18 +2,17 @@ FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy as builder
 
 WORKDIR /src
 
-RUN apt-get update && \
-    apt-get -y install --no-install-recommends \
-      build-essential \
-      libssl-dev \
-      pkg-config \
-      libboost-all-dev \
-      libsodium-dev \
-      libzmq5 \
-      libzmq3-dev \
-      ca-certificates \
-      curl && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get -y install --no-install-recommends \
+  build-essential \
+  libssl-dev \
+  pkg-config \
+  libboost-all-dev \
+  libsodium-dev \
+  libzmq5 \
+  libzmq3-dev \
+  ca-certificates \
+  curl \
+  && rm -rf /var/lib/apt/lists/*
 
 # Miningcore source is provided as the Docker build context by the GitHub Actions workflow.
 COPY . .
@@ -33,14 +32,9 @@ extern "C" void scrypt_export(const char* input, char* output, uint32_t N, uint3
 }
 EOF
 
-RUN gcc -c -fPIC -O2 \
-      -I/src/src/Native/libmultihash \
-      -o /tmp/axedgb-multihash/scryptn.o \
-      /src/src/Native/libmultihash/scryptn.c && \
-    g++ -shared -fPIC -O2 -std=c++11 \
-      -o /tmp/axedgb-multihash/libmultihash.so \
-      /tmp/axedgb-multihash/exports_min.cpp \
-      /tmp/axedgb-multihash/scryptn.o
+RUN set -eux; \
+  gcc -c -fPIC -O2 -I/src/src/Native/libmultihash -o /tmp/axedgb-multihash/scryptn.o /src/src/Native/libmultihash/scryptn.c; \
+  g++ -shared -fPIC -O2 -std=c++11 -o /tmp/axedgb-multihash/libmultihash.so /tmp/axedgb-multihash/exports_min.cpp /tmp/axedgb-multihash/scryptn.o
 
 # Publish Miningcore binaries.
 WORKDIR /src/src/Miningcore
@@ -53,13 +47,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
 
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get -y install --no-install-recommends \
-      libzmq5 \
-      ca-certificates \
-      curl && \
-    (apt-get -y install --no-install-recommends libsodium23 || apt-get -y install --no-install-recommends libsodium-dev) && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get -y install --no-install-recommends \
+  libzmq5 \
+  ca-certificates \
+  curl \
+  && (apt-get -y install --no-install-recommends libsodium23 || apt-get -y install --no-install-recommends libsodium-dev) \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /out/ ./
 

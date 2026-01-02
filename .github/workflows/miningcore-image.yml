@@ -51,8 +51,7 @@ jobs:
           context: ./_vendor/miningcore
           file: ./_vendor/miningcore/Dockerfile
           push: true
-          # amd64 first to unblock Umbrel updates; add arm64 once the build is stable under QEMU.
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/willitmod/miningcore:${{ steps.tag.outputs.tag }}
           provenance: false
