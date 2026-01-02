@@ -20,7 +20,18 @@ COPY . .
 
 # Build a minimal libmultihash for Scrypt (portable across amd64/arm64).
 RUN mkdir -p /tmp/axedgb-multihash && \
-    cat > /tmp/axedgb-multihash/exports_min.cpp <<'EOF'\n#include <stdint.h>\nextern \"C\" {\n  void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);\n}\nextern \"C\" void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)\n{\n  scrypt_N_R_1_256(input, output, N, R, input_len);\n}\nEOF
+    cat > /tmp/axedgb-multihash/exports_min.cpp <<'EOF'
+#include <stdint.h>
+
+extern "C" {
+  void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);
+}
+
+extern "C" void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)
+{
+  scrypt_N_R_1_256(input, output, N, R, input_len);
+}
+EOF
 
 RUN gcc -c -fPIC -O2 \
       -I/src/src/Native/libmultihash \
