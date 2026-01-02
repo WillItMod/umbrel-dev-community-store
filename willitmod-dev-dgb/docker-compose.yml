@@ -61,7 +61,7 @@ services:
               printf "upnp=1\n"
             } >> /data/node/digibyte.conf
           fi
-          if ! grep -q 'axedgb-rpc-defaults-v1' /data/node/digibyte.conf; then
+          if ! awk 'BEGIN{inTest=0; found=0} /^\\[test\\][[:space:]]*$/{inTest=1} /axedgb-rpc-defaults-v1/{if(!inTest) found=1} END{exit(found?0:1)}' /data/node/digibyte.conf; then
             echo "[axedgb] Adding RPC capacity defaults to digibyte.conf"
             if grep -q '^\\[test\\][[:space:]]*$' /data/node/digibyte.conf; then
               awk 'BEGIN{added=0}
