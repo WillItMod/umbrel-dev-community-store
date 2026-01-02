@@ -16,6 +16,11 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 
+try:
+    import pg8000  # type: ignore
+except Exception:
+    pg8000 = None
+
 
 _DEFAULT_STATIC_DIR = "/app/static" if Path("/app/static").exists() else "/data/ui/static"
 STATIC_DIR = Path(os.getenv("STATIC_DIR", _DEFAULT_STATIC_DIR))
@@ -33,7 +38,11 @@ INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
 NODE_EXTRAS_CACHE_PATH = STATE_DIR / "node_extras_cache.json"
 CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
-POOL_PLACEHOLDER_PAYOUT_ADDRESS = "DNDYSzQM6gQuT15GfPEQysCAfKsyGQFVd5"
+# Miningcore requires a syntactically valid payout address in its config at startup.
+# This is a deterministic "burn" address (hash160=0x00..00, base58check version=0x1e)
+# so no real wallet address is shipped in the repo, and the pool remains "not configured"
+# until the user sets their own payout address.
+POOL_PLACEHOLDER_PAYOUT_ADDRESS = "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 DGB_IMAGE = os.getenv("DGB_IMAGE", "").strip()
@@ -54,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.67-alpha"
+APP_VERSION = "0.7.68-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1184,7 +1193,6 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
 
         connected = _dget(stats, "connectedMiners", "ConnectedMiners", default=0) or 0
         hashrate_hs = _dget(stats, "poolHashrate", "PoolHashrate", default=0) or 0
-        effort = _dget(pool, "poolEffort", "PoolEffort", default=None)
         total_blocks = _dget(pool, "totalBlocks", "TotalBlocks", default=None)
         network_difficulty = _dget(netstats, "networkDifficulty", "NetworkDifficulty", default=None)
         network_height = _dget(netstats, "blockHeight", "BlockHeight", default=None)
@@ -1199,9 +1207,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             hashrate_ths = None
 
         try:
-            effort_pct = float(effort) if effort is not None else None
+            best = _pool_best_difficulties(pool_id)
         except Exception:
-            effort_pct = None
+            best = {}
 
         status = {
             "backend": "miningcore",
@@ -1209,10 +1217,12 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "algo": algo,
             "workers": workers_i,
             "hashrate_ths": hashrate_ths,
-            "effort_percent": effort_pct,
             "total_blocks": total_blocks,
             "network_difficulty": network_difficulty,
             "network_height": network_height,
+            "best_difficulty_all": best.get("best_difficulty_all"),
+            "best_difficulty_since_block": best.get("best_difficulty_since_block"),
+            "best_difficulty_since_block_at": best.get("best_difficulty_since_block_at"),
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -1250,10 +1260,12 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             status.setdefault("algo", algo)
             status.setdefault("workers", 0)
             status.setdefault("hashrate_ths", None)
-            status.setdefault("effort_percent", None)
             status.setdefault("total_blocks", None)
             status.setdefault("network_difficulty", None)
             status.setdefault("network_height", None)
+            status.setdefault("best_difficulty_all", None)
+            status.setdefault("best_difficulty_since_block", None)
+            status.setdefault("best_difficulty_since_block_at", None)
             status.setdefault("hashrates_ths", {})
             return status
 
@@ -1263,10 +1275,12 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "algo": algo,
             "workers": 0,
             "hashrate_ths": None,
-            "effort_percent": None,
             "total_blocks": None,
             "network_difficulty": None,
             "network_height": None,
+            "best_difficulty_all": None,
+            "best_difficulty_since_block": None,
+            "best_difficulty_since_block_at": None,
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -1631,7 +1645,8 @@ def _support_ticket_payload(*, subject: str, message: str, email: str | None):
         diagnostics["pool"] = {
             "workers": pool.get("workers"),
             "hashrate_ths": pool.get("hashrate_ths"),
-            "effort_percent": pool.get("effort_percent"),
+            "best_difficulty_since_block": pool.get("best_difficulty_since_block"),
+            "best_difficulty_all": pool.get("best_difficulty_all"),
         }
     except Exception as e:
         diagnostics["pool_error"] = str(e)
@@ -1778,6 +1793,110 @@ def _pool_series(pool_id: str) -> PoolSeries:
     return series
 
 
+BEST_DIFFICULTY_TTL_S = int(os.getenv("BEST_DIFFICULTY_TTL_S", "15"))
+BEST_DIFFICULTY_CACHE: dict[str, dict] = {}
+BEST_DIFFICULTY_CACHE_LOCK = threading.Lock()
+
+
+def _iso_z(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _miningcore_postgres_cfg() -> dict | None:
+    try:
+        conf = _read_miningcore_conf()
+        persistence = conf.get("persistence") if isinstance(conf, dict) else None
+        postgres = persistence.get("postgres") if isinstance(persistence, dict) else None
+        postgres = postgres if isinstance(postgres, dict) else None
+        if not postgres:
+            return None
+        host = str(postgres.get("host") or "").strip()
+        user = str(postgres.get("user") or "").strip()
+        password = str(postgres.get("password") or "").strip()
+        database = str(postgres.get("database") or "").strip()
+        port = _to_int(postgres.get("port"), 5432)
+        if not host or not user or not database:
+            return None
+        return {"host": host, "port": port, "user": user, "password": password, "database": database}
+    except Exception:
+        return None
+
+
+def _pool_best_difficulties(pool_id: str) -> dict:
+    now = time.time()
+    with BEST_DIFFICULTY_CACHE_LOCK:
+        cached = BEST_DIFFICULTY_CACHE.get(pool_id)
+        if cached and (now - float(cached.get("t") or 0.0)) <= BEST_DIFFICULTY_TTL_S:
+            data = cached.get("data")
+            return dict(data) if isinstance(data, dict) else {}
+
+    if pg8000 is None:
+        return {}
+
+    cfg = _miningcore_postgres_cfg()
+    if not cfg:
+        return {}
+
+    best_all = None
+    best_since = None
+    last_block_created = None
+
+    try:
+        conn = pg8000.connect(
+            user=cfg["user"],
+            password=cfg.get("password") or None,
+            host=cfg["host"],
+            port=int(cfg["port"]),
+            database=cfg["database"],
+            timeout=3,
+        )
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT MAX(difficulty) FROM shares WHERE poolid=%s", (pool_id,))
+            row = cur.fetchone()
+            best_all = float(row[0]) if row and row[0] is not None else None
+
+            cur.execute("SELECT MAX(created) FROM blocks WHERE poolid=%s", (pool_id,))
+            row = cur.fetchone()
+            last_block_created = row[0] if row and row[0] is not None else None
+
+            if last_block_created is not None:
+                cur.execute(
+                    "SELECT MAX(difficulty) FROM shares WHERE poolid=%s AND created >= %s",
+                    (pool_id, last_block_created),
+                )
+                row = cur.fetchone()
+                best_since = float(row[0]) if row and row[0] is not None else None
+            else:
+                best_since = best_all
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        out = {
+            "best_difficulty_all": None,
+            "best_difficulty_since_block": None,
+            "best_difficulty_since_block_at": None,
+        }
+        with BEST_DIFFICULTY_CACHE_LOCK:
+            BEST_DIFFICULTY_CACHE[pool_id] = {"t": now, "data": out}
+        return dict(out)
+
+    out = {
+        "best_difficulty_all": best_all,
+        "best_difficulty_since_block": best_since,
+        "best_difficulty_since_block_at": _iso_z(last_block_created) if isinstance(last_block_created, datetime) else None,
+    }
+
+    with BEST_DIFFICULTY_CACHE_LOCK:
+        BEST_DIFFICULTY_CACHE[pool_id] = {"t": now, "data": out}
+    return out
+
+
 def _series_sampler(stop_event: threading.Event):
     while not stop_event.is_set():
         ids = _pool_ids()
@@ -1806,12 +1925,16 @@ def _series_sampler(stop_event: threading.Event):
                         return None
 
                 hashrate_f = to_float(status.get("hashrate_ths"))
+                netdiff_f = to_float(status.get("network_difficulty"))
+                netheight_i = _maybe_int(status.get("network_height"))
 
                 _pool_series(pool_id).append(
                     {
                         "t": _now_ms(),
                         "workers": workers_i,
                         "hashrate_ths": hashrate_f,
+                        "network_difficulty": netdiff_f,
+                        "network_height": netheight_i,
                     }
                 )
             except Exception:
@@ -1846,12 +1969,13 @@ def _widget_sync():
 def _widget_pool():
     pool_id = _pool_id_for_algo("sha256")
     p = _pool_status(pool_id, algo="sha256")
+    best = p.get("best_difficulty_since_block") or p.get("best_difficulty_all")
     return {
         "type": "three-stats",
         "items": [
             {"title": "Hashrate", "text": str(p.get("hashrate_ths") or "-"), "subtext": "TH/s"},
             {"title": "Workers", "text": str(p.get("workers") or 0)},
-            {"title": "Effort", "text": str(p.get("effort_percent") or "-"), "subtext": "%"},
+            {"title": "Best diff", "text": str(best or "-"), "subtext": ""},
         ],
     }
 
@@ -2061,6 +2185,31 @@ class Handler(BaseHTTPRequestHandler):
                         algo = part.split("=", 1)[1].strip().lower() or None
 
                 pool_id = _pool_id_for_algo(algo)
+
+                # Prefer our higher-frequency sampler series (updates every ~30s) so 30m views
+                # don't go blank between Miningcore's hourly performance buckets.
+                series = _pool_series(pool_id).query(trail=trail, max_points=2000)
+                pts = []
+                for p in series:
+                    try:
+                        t = int(p.get("t") or 0)
+                    except Exception:
+                        continue
+                    v = p.get("network_difficulty")
+                    try:
+                        v = float(v) if v is not None else None
+                    except Exception:
+                        v = None
+                    if v is None or not math.isfinite(v):
+                        continue
+                    pts.append({"t": t, "difficulty": v})
+
+                pts.sort(key=lambda p: p.get("t", 0))
+                pts = _downsample(pts, 1000)
+                if pts:
+                    return self._send(*_json({"trail": trail, "algo": algo, "poolId": pool_id, "points": pts}))
+
+                # Fallback: Miningcore hourly performance points.
                 perf = _miningcore_get_json(f"/api/pools/{pool_id}/performance")
                 rows = perf.get("stats") if isinstance(perf, dict) else None
                 rows = rows if isinstance(rows, list) else []
@@ -2077,6 +2226,8 @@ class Handler(BaseHTTPRequestHandler):
                         v = float(v) if v is not None else None
                     except Exception:
                         v = None
+                    if v is None or not math.isfinite(v):
+                        continue
                     pts.append({"t": int(t), "difficulty": v})
 
                 pts.sort(key=lambda p: p.get("t", 0))

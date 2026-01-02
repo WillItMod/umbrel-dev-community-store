@@ -4,6 +4,7 @@ function bytesToMiB(bytes) {
 }
 
 function formatTHS(v) {
+  if (v == null || v === '') return '-';
   const n = Number(v);
   if (!Number.isFinite(n)) return '-';
   if (n === 0) return '0';
@@ -14,6 +15,7 @@ function formatTHS(v) {
 }
 
 function formatHashrateFromTHS(v) {
+  if (v == null || v === '') return '-';
   const ths = Number(v);
   if (!Number.isFinite(ths)) return '-';
   if (ths === 0) return '0 H/s';
@@ -41,15 +43,8 @@ function formatHashrateFromTHS(v) {
   return `${formatTHS(ths)} TH/s`;
 }
 
-function formatEffortPercent(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '-';
-  const abs = Math.abs(n);
-  const digits = abs < 10 ? 1 : 0;
-  return `${n.toFixed(digits)}%`;
-}
-
 function formatCompactNumber(v) {
+  if (v == null || v === '') return '-';
   const n = Number(v);
   if (!Number.isFinite(n)) return '-';
   const abs = Math.abs(n);
@@ -465,10 +460,16 @@ async function refresh() {
     const pool = await fetchJson(`/api/pool?algo=${encodeURIComponent(algo)}`);
     document.getElementById('workers').textContent = pool.workers ?? '-';
     document.getElementById('hashrate').textContent = formatTHS(pool.hashrate_ths);
-    document.getElementById('bestshare').textContent = formatEffortPercent(pool.effort_percent);
+    const bestSince = pool && pool.best_difficulty_since_block;
+    const bestAll = pool && pool.best_difficulty_all;
+    const bestSinceEl = document.getElementById('bestdiff-since');
+    const bestAllEl = document.getElementById('bestdiff-all');
+    const bestSummaryEl = document.getElementById('bestdiff-summary');
+    if (bestSinceEl) bestSinceEl.textContent = formatCompactNumber(bestSince);
+    if (bestAllEl) bestAllEl.textContent = formatCompactNumber(bestAll);
+    if (bestSummaryEl) bestSummaryEl.textContent = formatCompactNumber(bestSince);
     document.getElementById('workers-summary').textContent = pool.workers ?? '-';
     document.getElementById('hashrate-summary').textContent = formatTHS(pool.hashrate_ths);
-    document.getElementById('bestshare-summary').textContent = formatEffortPercent(pool.effort_percent);
 
     const diffEl = document.getElementById('difficulty');
     const diffSub = document.getElementById('difficulty-sub');
@@ -520,10 +521,13 @@ async function refresh() {
   } catch {
     document.getElementById('workers').textContent = '-';
     document.getElementById('hashrate').textContent = '-';
-    document.getElementById('bestshare').textContent = '-';
     document.getElementById('workers-summary').textContent = '-';
     document.getElementById('hashrate-summary').textContent = '-';
-    document.getElementById('bestshare-summary').textContent = '-';
+    const bestIds = ['bestdiff-since', 'bestdiff-all', 'bestdiff-summary'];
+    for (const id of bestIds) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
+    }
 
     const diffEl = document.getElementById('difficulty');
     const diffSub = document.getElementById('difficulty-sub');

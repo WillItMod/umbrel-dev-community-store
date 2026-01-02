@@ -18,9 +18,10 @@ services:
       DGB_P2P_PORT: "12024"
       DGB_RPC_PORT: "14022"
       DGB_ZMQ_HASHBLOCK_PORT: "28344"
-      # Default is a valid legacy address to keep Miningcore from crashing before the user configures payout.
-      # Stratum ports default to 127.0.0.1 (see miningcore.json.template) so no external mining happens until configured.
-      PAYOUT_ADDRESS: "DNDYSzQM6gQuT15GfPEQysCAfKsyGQFVd5"
+      # Miningcore requires a syntactically valid payout address at startup.
+      # This is a deterministic "burn" address (no real wallet address is shipped in the repo).
+      # Stratum ports default to 127.0.0.1 (see miningcore.json.template) so external mining won't work until configured.
+      PAYOUT_ADDRESS: "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC"
       DB_HOST: "postgres"
       DB_USER: "miningcore"
       DB_PASSWORD: "${APP_PASSWORD}"
@@ -173,11 +174,11 @@ services:
                    "paymentProcessing": {"enabled": false},
                    "banning": {"enabled": true, "time": 600, "invalidPercent": 50, "checkThreshold": 50},
                    "ports": {
-                     "3334": {
-                       "listenAddress": "0.0.0.0",
-                       "difficulty": $$diff,
-                       "varDiff": {
-                         "minDiff": $$mindiff,
+                      "3334": {
+                        "listenAddress": "127.0.0.1",
+                        "difficulty": $$diff,
+                        "varDiff": {
+                          "minDiff": $$mindiff,
                          "maxDiff": $$maxdiff,
                          "targetTime": 15,
                          "retargetTime": 90,
@@ -353,7 +354,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.67-alpha
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.68-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s

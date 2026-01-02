@@ -2,7 +2,7 @@ manifestVersion: 1
 id: willitmod-dev-dgb
 category: altcoin
 name: AxeDGB
-version: "0.7.67-alpha"
+version: "0.7.68-alpha"
 tagline: DGB node + solo pool
 description: >-
   Run a DigiByte full node (DigiByte Core) and a solo Stratum v1 pool (Miningcore) as a single Umbrel app installation.
@@ -86,9 +86,9 @@ widgets:
           subtext: "TH/s"
         - title: "Workers"
           text: "2"
-        - title: "Best Share"
+        - title: "Best diff"
           text: "21"
-          subtext: "G"
+          subtext: ""
 backupIgnore:
   - data/node/blocks
   - data/node/chainstate
