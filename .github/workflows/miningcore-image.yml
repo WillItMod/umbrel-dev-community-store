@@ -26,6 +26,10 @@ jobs:
           path: _vendor/miningcore
           fetch-depth: 1
 
+      - name: Copy Dockerfile into build context
+        run: |
+          cp willitmod-dev-dgb/images/miningcore/Dockerfile _vendor/miningcore/Dockerfile
+
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
@@ -45,10 +49,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./_vendor/miningcore
-          file: ./willitmod-dev-dgb/images/miningcore/Dockerfile
+          file: ./_vendor/miningcore/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/willitmod/miningcore:${{ steps.tag.outputs.tag }}
           provenance: false
-
