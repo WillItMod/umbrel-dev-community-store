@@ -36,9 +36,9 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get -y install --no-install-recommends \
       libzmq5 \
-      libsodium23 \
       ca-certificates \
       curl && \
+    (apt-get -y install --no-install-recommends libsodium23 || apt-get -y install --no-install-recommends libsodium-dev) && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /out/ ./
@@ -50,4 +50,3 @@ ENV LD_LIBRARY_PATH=/app
 
 EXPOSE 4000-4090
 CMD ["./Miningcore", "-c", "config.json"]
-
