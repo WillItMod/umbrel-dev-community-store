@@ -366,6 +366,7 @@ services:
     volumes:
       - ${APP_DATA_DIR}/data:/data
     environment:
+      JWT_SECRET: "${APP_PASSWORD}"
       DGB_RPC_HOST: "dgbd"
       DGB_RPC_PORT: "14022"
       DGB_RPC_USER: "dgb"
