@@ -45,13 +45,15 @@ jobs:
         run: |
           echo "tag=$(cat willitmod-dev-dgb/images/miningcore/VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./_vendor/miningcore
-          file: ./_vendor/miningcore/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/willitmod/miningcore:${{ steps.tag.outputs.tag }}
-          provenance: false
+      - name: Build and push (plain progress)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -eux
+          docker buildx build \
+            --progress=plain \
+            --platform linux/amd64,linux/arm64 \
+            -f ./_vendor/miningcore/Dockerfile \
+            -t ghcr.io/willitmod/miningcore:${TAG} \
+            --push \
+            ./_vendor/miningcore
