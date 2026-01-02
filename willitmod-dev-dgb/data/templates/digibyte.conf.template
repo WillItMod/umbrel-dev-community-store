@@ -50,6 +50,11 @@ addnode=73.156.140.158:12024
 addnode=144.76.103.24:12024
 addnode=184.164.16.141:12024
 
+# axedgb-rpc-defaults-v1
+# AxeDGB defaults (Miningcore + UI increase RPC load)
+rpcworkqueue=128
+rpcthreads=16
+
 # Testnet settings
 [test]
 # DigiByte Core only applies several settings to testnet when they are placed under [test].

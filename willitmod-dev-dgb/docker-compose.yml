@@ -61,26 +61,26 @@ services:
               printf "upnp=1\n"
             } >> /data/node/digibyte.conf
           fi
-          if ! grep -q '^rpcworkqueue=' /data/node/digibyte.conf; then
-            echo "[axedgb] Adding rpcworkqueue=128 to digibyte.conf"
-            if grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
-              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcworkqueue=128"; added=1}} {print}' /data/node/digibyte.conf > /data/node/digibyte.conf.tmp && mv /data/node/digibyte.conf.tmp /data/node/digibyte.conf
+          if ! grep -q 'axedgb-rpc-defaults-v1' /data/node/digibyte.conf; then
+            echo "[axedgb] Adding RPC capacity defaults to digibyte.conf"
+            if grep -q '^\\[test\\][[:space:]]*$' /data/node/digibyte.conf; then
+              awk 'BEGIN{added=0}
+                /^\\[test\\][[:space:]]*$/{if(!added){
+                  print "";
+                  print "# axedgb-rpc-defaults-v1";
+                  print "# AxeDGB defaults (Miningcore + UI increase RPC load)";
+                  print "rpcworkqueue=128";
+                  print "rpcthreads=16";
+                  added=1
+                }}
+                {print}
+              ' /data/node/digibyte.conf > /data/node/digibyte.conf.tmp && mv /data/node/digibyte.conf.tmp /data/node/digibyte.conf
             else
               {
                 printf "\n"
+                printf "# axedgb-rpc-defaults-v1\n"
                 printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
                 printf "rpcworkqueue=128\n"
-              } >> /data/node/digibyte.conf
-            fi
-          fi
-          if ! grep -q '^rpcthreads=' /data/node/digibyte.conf; then
-            echo "[axedgb] Adding rpcthreads=16 to digibyte.conf"
-            if grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
-              awk 'BEGIN{added=0} /^\\[test\\]$/{if(!added){print ""; print "# AxeDGB defaults (Miningcore + UI increase RPC load)"; print "rpcthreads=16"; added=1}} {print}' /data/node/digibyte.conf > /data/node/digibyte.conf.tmp && mv /data/node/digibyte.conf.tmp /data/node/digibyte.conf
-            else
-              {
-                printf "\n"
-                printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
                 printf "rpcthreads=16\n"
               } >> /data/node/digibyte.conf
             fi
@@ -105,7 +105,7 @@ services:
           fi
 
           # Ensure testnet section exists so switching to testnet doesn't end up with 0 peers.
-          if ! grep -q '^\\[test\\]$' /data/node/digibyte.conf; then
+          if ! grep -q '^\\[test\\][[:space:]]*$' /data/node/digibyte.conf; then
             echo "[axedgb] Adding [test] section defaults to digibyte.conf"
             {
               printf "\n"
