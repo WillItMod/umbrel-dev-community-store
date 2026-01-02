@@ -10,7 +10,7 @@ import time
 import urllib.request
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.18"
+APP_VERSION = "0.8.20"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -204,6 +204,19 @@ def _pool_workers_from_db(pool_id: str):
             (pool_id,),
         )
         rows = cur.fetchall() or []
+
+        # Pull "last share" timestamps from shares (minerstats.created is a snapshot timestamp, not the last share time).
+        # Limit the scan window to keep it cheap even on busy pools.
+        cur.execute(
+            """
+            SELECT miner, worker, MAX(created) AS last_share
+            FROM shares
+            WHERE poolid = %s AND created >= (NOW() AT TIME ZONE 'utc') - INTERVAL '2 days'
+            GROUP BY miner, worker
+            """,
+            (pool_id,),
+        )
+        share_rows = cur.fetchall() or []
     except Exception:
         return None
     finally:
@@ -211,6 +224,18 @@ def _pool_workers_from_db(pool_id: str):
             conn.close()
         except Exception:
             pass
+
+    last_share_by_key: dict[tuple[str, str | None], datetime] = {}
+    for r in share_rows:
+        try:
+            miner, worker, last_share = r
+        except Exception:
+            continue
+        if not isinstance(last_share, datetime):
+            continue
+        miner_s = str(miner or "")
+        worker_s = str(worker or "").strip() or None
+        last_share_by_key[(miner_s, worker_s)] = last_share
 
     out = []
     for r in rows:
@@ -229,10 +254,10 @@ def _pool_workers_from_db(pool_id: str):
         if hashrate_hs_f is not None and not math.isfinite(hashrate_hs_f):
             hashrate_hs_f = None
 
-        created_dt = created if isinstance(created, datetime) else None
-        if created_dt is not None:
+        last_share_dt = last_share_by_key.get((miner_s, worker_s))
+        if isinstance(last_share_dt, datetime):
             try:
-                age_s = (datetime.now(timezone.utc) - created_dt.astimezone(timezone.utc)).total_seconds()
+                age_s = (datetime.now(timezone.utc) - last_share_dt.astimezone(timezone.utc)).total_seconds()
                 if WORKER_STALE_SECONDS > 0 and age_s > WORKER_STALE_SECONDS:
                     continue
             except Exception:
@@ -244,10 +269,10 @@ def _pool_workers_from_db(pool_id: str):
 
         last_share = None
         try:
-            if isinstance(created, datetime):
-                last_share = created.astimezone(timezone.utc).isoformat()
-            elif created is not None:
-                last_share = str(created)
+            if isinstance(last_share_dt, datetime):
+                last_share = last_share_dt.astimezone(timezone.utc).isoformat()
+            elif last_share_dt is not None:
+                last_share = str(last_share_dt)
         except Exception:
             last_share = None
 
@@ -1373,6 +1398,21 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
         except Exception:
             best = {}
 
+        try:
+            share_health = _pool_share_health(pool_id)
+        except Exception:
+            share_health = {}
+
+        eta_seconds = None
+        try:
+            if hashrate_ths and network_difficulty:
+                hashrate_hs_f = float(hashrate_ths) * 1e12
+                netdiff_f = float(network_difficulty)
+                if hashrate_hs_f > 0 and netdiff_f > 0:
+                    eta_seconds = (netdiff_f * (2**32)) / hashrate_hs_f
+        except Exception:
+            eta_seconds = None
+
         status = {
             "backend": "miningcore",
             "poolId": pool_id,
@@ -1385,6 +1425,10 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "best_difficulty_all": best.get("best_difficulty_all"),
             "best_difficulty_since_block": best.get("best_difficulty_since_block"),
             "best_difficulty_since_block_at": best.get("best_difficulty_since_block_at"),
+            "shares_10m": share_health.get("shares_10m"),
+            "shares_1h": share_health.get("shares_1h"),
+            "last_share_at": share_health.get("last_share_at"),
+            "eta_seconds": eta_seconds,
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -1428,6 +1472,10 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             status.setdefault("best_difficulty_all", None)
             status.setdefault("best_difficulty_since_block", None)
             status.setdefault("best_difficulty_since_block_at", None)
+            status.setdefault("shares_10m", None)
+            status.setdefault("shares_1h", None)
+            status.setdefault("last_share_at", None)
+            status.setdefault("eta_seconds", None)
             status.setdefault("hashrates_ths", {})
             return status
 
@@ -1443,6 +1491,10 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "best_difficulty_all": None,
             "best_difficulty_since_block": None,
             "best_difficulty_since_block_at": None,
+            "shares_10m": None,
+            "shares_1h": None,
+            "last_share_at": None,
+            "eta_seconds": None,
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -2061,6 +2113,59 @@ def _pool_best_difficulties(pool_id: str) -> dict:
     with BEST_DIFFICULTY_CACHE_LOCK:
         BEST_DIFFICULTY_CACHE[pool_id] = {"t": now, "data": out}
     return out
+
+
+def _pool_share_health(pool_id: str) -> dict:
+    if pg8000 is None:
+        return {}
+    cfg = _miningcore_postgres_cfg()
+    if not cfg:
+        return {}
+
+    cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
+    cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    try:
+        conn = pg8000.connect(
+            user=cfg["user"],
+            password=cfg.get("password") or None,
+            host=cfg["host"],
+            port=int(cfg["port"]),
+            database=cfg["database"],
+            timeout=3,
+        )
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) FROM shares WHERE poolid=%s AND created >= %s",
+                (pool_id, cutoff_10m),
+            )
+            row = cur.fetchone()
+            shares_10m = int(row[0]) if row and row[0] is not None else 0
+
+            cur.execute(
+                "SELECT COUNT(*) FROM shares WHERE poolid=%s AND created >= %s",
+                (pool_id, cutoff_1h),
+            )
+            row = cur.fetchone()
+            shares_1h = int(row[0]) if row and row[0] is not None else 0
+
+            cur.execute(
+                "SELECT MAX(created) FROM shares WHERE poolid=%s",
+                (pool_id,),
+            )
+            row = cur.fetchone()
+            last_share_created = row[0] if row and row[0] is not None else None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        return {}
+
+    last_share_iso = _iso_z(last_share_created) if isinstance(last_share_created, datetime) else None
+    return {"shares_10m": shares_10m, "shares_1h": shares_1h, "last_share_at": last_share_iso}
 
 
 def _series_sampler(stop_event: threading.Event):
