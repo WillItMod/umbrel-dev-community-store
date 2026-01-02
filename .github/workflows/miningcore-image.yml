@@ -59,7 +59,17 @@ jobs:
             # GitHub limits annotation size; keep this short and focused.
             tail_msg="$(tail -n 80 /tmp/buildx.log | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
             err_msg="$(grep -Ei '(^|[^a-z])error:|^ERROR:' /tmp/buildx.log | tail -n 80 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
+            dotnet_ln="$(grep -n 'dotnet publish' /tmp/buildx.log | tail -n 1 | cut -d: -f1 || true)"
+            if [ -n "${dotnet_ln}" ]; then
+              start=$((dotnet_ln - 40)); if [ "${start}" -lt 1 ]; then start=1; fi
+              end=$((dotnet_ln + 120))
+              dotnet_ctx="$(sed -n "${start},${end}p" /tmp/buildx.log | tail -n 120)"
+            else
+              dotnet_ctx=""
+            fi
+            dotnet_ctx="$(printf '%s' "${dotnet_ctx}" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
             echo "::error title=buildx errors (last matches)::${err_msg}"
+            echo "::error title=dotnet publish context::${dotnet_ctx}"
             echo "::error title=buildx tail (last 80 lines)::${tail_msg}"
             exit 1
           fi
