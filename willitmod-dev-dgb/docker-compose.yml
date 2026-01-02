@@ -6,9 +6,9 @@ services:
       # Use a unique DNS alias to avoid collisions on Umbrel's shared Docker network.
       APP_HOST: axedgb-app
       APP_PORT: 3000
-      # Umbrel signs the auth token using the system auth secret.
-      # In legacy-compat this is provided as UMBREL_AUTH_SECRET, so use that for verification.
-      JWT_SECRET: "${UMBREL_AUTH_SECRET}"
+      # Verify Umbrel auth tokens using the same secret the auth-server uses.
+      # exports.sh ensures JWT_SECRET is populated even in legacy-compat flows.
+      JWT_SECRET: "${JWT_SECRET}"
 
   init:
     image: alpine:3.22.1
