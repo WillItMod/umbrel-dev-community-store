@@ -29,6 +29,11 @@ rpcallowip=10.0.0.0/8
 rpcallowip=172.16.0.0/12
 rpcallowip=192.168.0.0/16
 
+# Miningcore and the UI make frequent RPC calls; increase queue/threads so DigiByte doesn't reject
+# requests with: "http work queue depth exceeded".
+rpcworkqueue=128
+rpcthreads=16
+
 # ZMQ (for pool notifications)
 zmqpubhashblock=tcp://0.0.0.0:${DGB_ZMQ_HASHBLOCK_PORT}
 
