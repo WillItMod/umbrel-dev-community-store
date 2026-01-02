@@ -152,6 +152,7 @@
               </div>
             </div>
           </div>
+          <div id="block-found-banner" class="axe-shadow-heavy mt-4 hidden rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white"></div>
 
           <div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div class="lg:col-span-1">
@@ -196,12 +197,17 @@
                   </div>
                 </div>
                 <div class="axe-stat">
+                  <div class="axe-stat__k">Network difficulty</div>
+                  <div class="axe-stat__v" id="difficulty">-</div>
+                  <div class="axe-stat__k mt-1" id="difficulty-sub">-</div>
+                </div>
+                <div class="axe-stat">
                   <div class="axe-stat__k">Effort</div>
                   <div class="axe-stat__v" id="bestshare">-</div>
                 </div>
                 <div class="axe-stat">
                   <div class="axe-stat__k">Workers (details)</div>
-                  <div class="mt-2 text-xs text-slate-400" id="worker-details-status">Loading…</div>
+                  <div class="mt-2 text-xs text-slate-400" id="worker-details-status">Loading...</div>
                   <div class="mt-2 overflow-hidden rounded-xl border border-white/10">
                     <div id="worker-details-rows" class="divide-y divide-white/10"></div>
                   </div>
@@ -236,8 +242,12 @@
                         <span class="axe-shadow-heavy font-mono font-extrabold text-white" id="legend-1h">-</span>
                       </div>
                   </div>
-                  </div>
                 </div>
+                <div class="axe-stat">
+                  <div class="axe-stat__k">Network difficulty</div>
+                  <canvas id="chart-difficulty" class="mt-2 w-full rounded-xl bg-black/30" height="84"></canvas>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -279,7 +289,7 @@
             <div>
               <div class="text-sm text-slate-300">Node settings</div>
               <div class="mt-1 text-lg font-bold">Network, pruning, indexes</div>
-              <div class="mt-1 text-sm text-slate-400">Saving updates `bitcoin.conf`. Restart the app after saving.</div>
+              <div class="mt-1 text-sm text-slate-400">Saving updates `digibyte.conf`. Restart the app after saving.</div>
             </div>
             <div class="flex items-center gap-3">
               <button id="support-jump" class="axe-btn" type="button">Support ticket</button>

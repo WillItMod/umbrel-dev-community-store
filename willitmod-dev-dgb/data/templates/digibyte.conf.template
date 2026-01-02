@@ -31,8 +31,8 @@ rpcallowip=192.168.0.0/16
 
 # Miningcore and the UI make frequent RPC calls; increase queue/threads so DigiByte doesn't reject
 # requests with: "http work queue depth exceeded".
-rpcworkqueue=128
-rpcthreads=16
+rpcworkqueue=1024
+rpcthreads=32
 
 # ZMQ (for pool notifications)
 zmqpubhashblock=tcp://0.0.0.0:${DGB_ZMQ_HASHBLOCK_PORT}
@@ -49,11 +49,6 @@ addnode=66.108.15.5:12024
 addnode=73.156.140.158:12024
 addnode=144.76.103.24:12024
 addnode=184.164.16.141:12024
-
-# axedgb-rpc-defaults-v1
-# AxeDGB defaults (Miningcore + UI increase RPC load)
-rpcworkqueue=128
-rpcthreads=16
 
 # Testnet settings
 [test]

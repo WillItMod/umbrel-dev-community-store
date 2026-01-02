@@ -61,16 +61,16 @@ services:
               printf "upnp=1\n"
             } >> /data/node/digibyte.conf
           fi
-          if ! awk 'BEGIN{inTest=0; found=0} /^\\[test\\][[:space:]]*$/{inTest=1} /axedgb-rpc-defaults-v1/{if(!inTest) found=1} END{exit(found?0:1)}' /data/node/digibyte.conf; then
+          if ! awk 'BEGIN{inTest=0; found=0} /^\\[test\\][[:space:]]*$/{inTest=1} /axedgb-rpc-defaults-v2/{if(!inTest) found=1} END{exit(found?0:1)}' /data/node/digibyte.conf; then
             echo "[axedgb] Adding RPC capacity defaults to digibyte.conf"
             if grep -q '^\\[test\\][[:space:]]*$' /data/node/digibyte.conf; then
               awk 'BEGIN{added=0}
                 /^\\[test\\][[:space:]]*$/{if(!added){
                   print "";
-                  print "# axedgb-rpc-defaults-v1";
+                  print "# axedgb-rpc-defaults-v2";
                   print "# AxeDGB defaults (Miningcore + UI increase RPC load)";
-                  print "rpcworkqueue=128";
-                  print "rpcthreads=16";
+                  print "rpcworkqueue=1024";
+                  print "rpcthreads=32";
                   added=1
                 }}
                 {print}
@@ -78,10 +78,10 @@ services:
             else
               {
                 printf "\n"
-                printf "# axedgb-rpc-defaults-v1\n"
+                printf "# axedgb-rpc-defaults-v2\n"
                 printf "# AxeDGB defaults (Miningcore + UI increase RPC load)\n"
-                printf "rpcworkqueue=128\n"
-                printf "rpcthreads=16\n"
+                printf "rpcworkqueue=1024\n"
+                printf "rpcthreads=32\n"
               } >> /data/node/digibyte.conf
             fi
           fi
@@ -345,7 +345,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.64-alpha
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.65-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s

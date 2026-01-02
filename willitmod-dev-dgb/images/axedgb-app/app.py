@@ -10,6 +10,7 @@ import time
 import urllib.request
 import uuid
 import zipfile
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -30,6 +31,7 @@ STATE_DIR = Path("/data/ui/state")
 POOL_SETTINGS_STATE_PATH = STATE_DIR / "pool_settings.json"
 INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
+NODE_EXTRAS_CACHE_PATH = STATE_DIR / "node_extras_cache.json"
 CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
 POOL_PLACEHOLDER_PAYOUT_ADDRESS = "CHANGEME_DGB_PAYOUT_ADDRESS"
 
@@ -52,7 +54,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.64-alpha"
+APP_VERSION = "0.7.65-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -209,8 +211,16 @@ def _rpc_call(method: str, params=None):
             except HTTPError as e:
                 # Bitcoin-style JSON-RPC returns HTTP 500 for application errors (e.g. warmup -28).
                 # Parse the JSON body so callers can handle structured error codes/messages.
-                raw = e.read()
-                data = json.loads(raw.decode("utf-8", errors="replace"))
+                raw = e.read() or b""
+                try:
+                    data = json.loads(raw.decode("utf-8", errors="replace"))
+                except Exception:
+                    snippet = raw.decode("utf-8", errors="replace").strip()
+                    snippet = snippet[:200] if snippet else ""
+                    msg = f"HTTP {getattr(e, 'code', '')} {getattr(e, 'reason', '')}".strip()
+                    if snippet:
+                        msg = f"{msg}: {snippet}"
+                    raise RpcError(getattr(e, "code", None), msg, raw=snippet or None)
             last_err = None
             break
         except Exception as e:
@@ -657,13 +667,31 @@ def _current_settings():
 
 def _node_status():
     info = _rpc_call("getblockchaininfo")
-    net = _rpc_call("getnetworkinfo")
-    mempool = _rpc_call("getmempoolinfo")
 
     blocks = int(info.get("blocks") or 0)
     headers = int(info.get("headers") or blocks)
     progress = float(info.get("verificationprogress") or 0.0)
     ibd = bool(info.get("initialblockdownload", False))
+
+    extras: dict = {}
+    cached_extras = _read_node_extras_cache()
+    now = int(time.time())
+    extras_max_age_s = 60
+    if cached_extras and (now - int(cached_extras["t"])) <= extras_max_age_s:
+        extras = dict(cached_extras["extras"])
+    else:
+        try:
+            net = _rpc_call("getnetworkinfo")
+            mempool = _rpc_call("getmempoolinfo")
+            extras = {
+                "connections": int(net.get("connections") or 0),
+                "subversion": str(net.get("subversion") or ""),
+                "mempool_bytes": int(mempool.get("bytes") or 0),
+            }
+            _write_node_extras_cache(extras)
+        except Exception:
+            if cached_extras:
+                extras = dict(cached_extras["extras"])
 
     status = {
         "chain": info.get("chain"),
@@ -671,9 +699,11 @@ def _node_status():
         "headers": headers,
         "verificationprogress": progress,
         "initialblockdownload": ibd,
-        "connections": int(net.get("connections") or 0),
-        "subversion": str(net.get("subversion") or ""),
-        "mempool_bytes": int(mempool.get("bytes") or 0),
+        "difficulty": info.get("difficulty"),
+        "difficulties": info.get("difficulties") if isinstance(info.get("difficulties"), dict) else None,
+        "connections": int(extras.get("connections") or 0),
+        "subversion": str(extras.get("subversion") or ""),
+        "mempool_bytes": int(extras.get("mempool_bytes") or 0),
     }
 
     try:
@@ -697,6 +727,30 @@ def _read_node_cache():
         return {"t": t, "status": status}
     except Exception:
         return None
+
+
+def _read_node_extras_cache():
+    try:
+        if not NODE_EXTRAS_CACHE_PATH.exists():
+            return None
+        obj = json.loads(NODE_EXTRAS_CACHE_PATH.read_text(encoding="utf-8", errors="replace"))
+        t = int(obj.get("t") or 0)
+        extras = obj.get("extras") or {}
+        if not isinstance(extras, dict):
+            return None
+        return {"t": t, "extras": extras}
+    except Exception:
+        return None
+
+
+def _write_node_extras_cache(extras: dict):
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        NODE_EXTRAS_CACHE_PATH.write_text(
+            json.dumps({"t": int(time.time()), "extras": extras}) + "\n", encoding="utf-8"
+        )
+    except Exception:
+        pass
 
 
 def _safe_slug(value: str) -> str:
@@ -1115,10 +1169,14 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
         data = _miningcore_get_json(f"/api/pools/{pool_id}")
         pool = _dget(data, "pool", "Pool", default={}) or {}
         stats = _dget(pool, "poolStats", "PoolStats", default={}) or {}
+        netstats = _dget(pool, "networkStats", "NetworkStats", default={}) or {}
 
         connected = _dget(stats, "connectedMiners", "ConnectedMiners", default=0) or 0
         hashrate_hs = _dget(stats, "poolHashrate", "PoolHashrate", default=0) or 0
         effort = _dget(pool, "poolEffort", "PoolEffort", default=None)
+        total_blocks = _dget(pool, "totalBlocks", "TotalBlocks", default=None)
+        network_difficulty = _dget(netstats, "networkDifficulty", "NetworkDifficulty", default=None)
+        network_height = _dget(netstats, "blockHeight", "BlockHeight", default=None)
 
         try:
             workers_i = int(connected)
@@ -1141,6 +1199,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "workers": workers_i,
             "hashrate_ths": hashrate_ths,
             "effort_percent": effort_pct,
+            "total_blocks": total_blocks,
+            "network_difficulty": network_difficulty,
+            "network_height": network_height,
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -1179,6 +1240,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             status.setdefault("workers", 0)
             status.setdefault("hashrate_ths", None)
             status.setdefault("effort_percent", None)
+            status.setdefault("total_blocks", None)
+            status.setdefault("network_difficulty", None)
+            status.setdefault("network_height", None)
             status.setdefault("hashrates_ths", {})
             return status
 
@@ -1189,6 +1253,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "workers": 0,
             "hashrate_ths": None,
             "effort_percent": None,
+            "total_blocks": None,
+            "network_difficulty": None,
+            "network_height": None,
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -1575,6 +1642,41 @@ def _now_ms():
     return int(time.time() * 1000)
 
 
+def _parse_iso_to_ms(value: str) -> int | None:
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        return None
+
+
+def _trail_to_seconds(trail: str) -> int:
+    trail = (trail or "").strip().lower()
+    return {
+        "30m": 30 * 60,
+        "6h": 6 * 60 * 60,
+        "12h": 12 * 60 * 60,
+        "1d": 24 * 60 * 60,
+        "3d": 3 * 24 * 60 * 60,
+        "6d": 6 * 24 * 60 * 60,
+        "7d": 7 * 24 * 60 * 60,
+    }.get(trail, 30 * 60)
+
+
+def _downsample(points: list[dict], max_points: int) -> list[dict]:
+    if len(points) <= max_points:
+        return points
+    stride = (len(points) + max_points - 1) // max_points
+    return points[::stride]
+
+
 class PoolSeries:
     def __init__(self, path: Path):
         self._lock = threading.Lock()
@@ -1790,7 +1892,7 @@ class Handler(BaseHTTPRequestHandler):
                     }
                 )
                 return self._send(*_json(payload))
-            except (HTTPError, URLError, RuntimeError) as e:
+            except Exception as e:
                 if isinstance(e, RpcError) and e.code == -28:
                     payload = {
                         "cached": False,
@@ -1895,6 +1997,48 @@ class Handler(BaseHTTPRequestHandler):
                     enriched.append(obj)
 
                 return self._send(*_json({"trail": trail, "algo": algo, "poolId": pool_id, "points": enriched}))
+            except Exception as e:
+                return self._send(*_json({"error": str(e)}, status=500))
+
+        if path.startswith("/api/timeseries/difficulty"):
+            try:
+                query = ""
+                if "?" in raw_path:
+                    _, query = raw_path.split("?", 1)
+
+                trail = "30m"
+                algo = None
+                for part in query.split("&"):
+                    if part.startswith("trail="):
+                        trail = part.split("=", 1)[1]
+                    if part.startswith("algo="):
+                        algo = part.split("=", 1)[1].strip().lower() or None
+
+                pool_id = _pool_id_for_algo(algo)
+                perf = _miningcore_get_json(f"/api/pools/{pool_id}/performance")
+                rows = perf.get("stats") if isinstance(perf, dict) else None
+                rows = rows if isinstance(rows, list) else []
+
+                pts = []
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    t = _parse_iso_to_ms(r.get("created"))
+                    if t is None:
+                        continue
+                    v = r.get("networkDifficulty")
+                    try:
+                        v = float(v) if v is not None else None
+                    except Exception:
+                        v = None
+                    pts.append({"t": int(t), "difficulty": v})
+
+                pts.sort(key=lambda p: p.get("t", 0))
+                cutoff_ms = _now_ms() - (_trail_to_seconds(trail) * 1000)
+                pts = [p for p in pts if int(p.get("t") or 0) >= cutoff_ms]
+                pts = _downsample(pts, 1000)
+
+                return self._send(*_json({"trail": trail, "algo": algo, "poolId": pool_id, "points": pts}))
             except Exception as e:
                 return self._send(*_json({"error": str(e)}, status=500))
 

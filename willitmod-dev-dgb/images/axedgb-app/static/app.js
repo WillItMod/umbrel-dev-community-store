@@ -49,6 +49,31 @@ function formatEffortPercent(v) {
   return `${n.toFixed(digits)}%`;
 }
 
+function formatCompactNumber(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  const abs = Math.abs(n);
+  const units = [
+    { scale: 1e12, suffix: 'T' },
+    { scale: 1e9, suffix: 'B' },
+    { scale: 1e6, suffix: 'M' },
+    { scale: 1e3, suffix: 'K' },
+  ];
+
+  for (const u of units) {
+    if (abs >= u.scale) {
+      const x = n / u.scale;
+      const digits = Math.abs(x) < 10 ? 3 : Math.abs(x) < 100 ? 2 : 1;
+      return `${x.toFixed(digits)}${u.suffix}`;
+    }
+  }
+
+  if (abs >= 100) return `${n.toFixed(0)}`;
+  if (abs >= 10) return `${n.toFixed(1)}`;
+  if (abs >= 1) return `${n.toFixed(2)}`;
+  return `${n.toFixed(3)}`;
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -442,6 +467,27 @@ async function refresh() {
     document.getElementById('hashrate-summary').textContent = formatTHS(pool.hashrate_ths);
     document.getElementById('bestshare-summary').textContent = formatEffortPercent(pool.effort_percent);
 
+    const diffEl = document.getElementById('difficulty');
+    const diffSub = document.getElementById('difficulty-sub');
+    if (diffEl) diffEl.textContent = formatCompactNumber(pool && pool.network_difficulty);
+    if (diffSub) {
+      const height = pool && pool.network_height ? ` | height ${pool.network_height}` : '';
+      diffSub.textContent = `${algo === 'scrypt' ? 'Scrypt' : 'SHA256d'}${height}`;
+    }
+
+    const banner = document.getElementById('block-found-banner');
+    const totalBlocks = Number(pool && pool.total_blocks);
+    if (banner && Number.isFinite(totalBlocks) && totalBlocks >= 0) {
+      const key = `dgbTotalBlocks_${algo}`;
+      const prev = Number(localStorage.getItem(key));
+      if (Number.isFinite(prev) && totalBlocks > prev) {
+        banner.textContent = `Block found! Total blocks: ${totalBlocks}`;
+        banner.classList.remove('hidden');
+        setTimeout(() => banner.classList.add('hidden'), 30000);
+      }
+      localStorage.setItem(key, String(totalBlocks));
+    }
+
     const h = (pool && pool.hashrates_ths) || {};
     const el1m = document.getElementById('hashrate-1m');
     const el5m = document.getElementById('hashrate-5m');
@@ -475,6 +521,14 @@ async function refresh() {
     document.getElementById('workers-summary').textContent = '-';
     document.getElementById('hashrate-summary').textContent = '-';
     document.getElementById('bestshare-summary').textContent = '-';
+
+    const diffEl = document.getElementById('difficulty');
+    const diffSub = document.getElementById('difficulty-sub');
+    if (diffEl) diffEl.textContent = '-';
+    if (diffSub) diffSub.textContent = '-';
+
+    const banner = document.getElementById('block-found-banner');
+    if (banner) banner.classList.add('hidden');
 
     const ids = ['hashrate-1m', 'hashrate-5m', 'hashrate-15m', 'hashrate-1h', 'hashrate-6h', 'hashrate-1d', 'hashrate-7d'];
     for (const id of ids) {
@@ -641,9 +695,16 @@ async function refreshCharts() {
       ],
       { format: (v) => v.toFixed(2) }
     );
+
+    const diffSeries = await fetchJson(
+      `/api/timeseries/difficulty?algo=${encodeURIComponent(algo)}&trail=${encodeURIComponent(trail)}`
+    );
+    const diffPts = ((diffSeries && diffSeries.points) || []).map((p) => ({ v: Number(p.difficulty) }));
+    drawSparkline(document.getElementById('chart-difficulty'), diffPts, { format: formatCompactNumber });
   } catch {
     drawSparkline(document.getElementById('chart-workers'), []);
     drawSparklineMulti(document.getElementById('chart-hashrate'), []);
+    drawSparkline(document.getElementById('chart-difficulty'), []);
   }
 }
 
