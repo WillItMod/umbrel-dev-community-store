@@ -172,7 +172,7 @@ def _stratum_ports() -> dict[str, int]:
     ports = _parse_ports(STRATUM_PORTS)
     if ports:
         return ports
-    return {"sha256": 5678}
+    return {"sha256": 5678, "scrypt": 5679}
 
 
 def _algo_from_query(path: str) -> str | None:
@@ -1025,9 +1025,11 @@ def _update_pool_settings(
     algo_to_pool_id = _pool_ids()
     algo_to_coin = {
         "sha256": "digibyte-sha256",
+        "scrypt": "digibyte-scrypt",
     }
     algo_to_port = {
         "sha256": "3333",
+        "scrypt": "3334",
     }
     try:
         def upsert(pool_id: str, *, coin: str | None, port: str):
