@@ -23,7 +23,7 @@ RUN set -eux; \
   printf '%s\n' \
     '#include <stdint.h>' \
     'void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);' \
-    '__attribute__((visibility(\"default\"))) void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)' \
+    '__attribute__((visibility("default"))) void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)' \
     '{' \
     '  scrypt_N_R_1_256(input, output, N, R, input_len);' \
     '}' \
