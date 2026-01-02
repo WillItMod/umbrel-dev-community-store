@@ -33,7 +33,7 @@ INSTALL_ID_PATH = STATE_DIR / "install_id.txt"
 NODE_CACHE_PATH = STATE_DIR / "node_cache.json"
 NODE_EXTRAS_CACHE_PATH = STATE_DIR / "node_extras_cache.json"
 CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
-POOL_PLACEHOLDER_PAYOUT_ADDRESS = "CHANGEME_DGB_PAYOUT_ADDRESS"
+POOL_PLACEHOLDER_PAYOUT_ADDRESS = "DNDYSzQM6gQuT15GfPEQysCAfKsyGQFVd5"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 DGB_IMAGE = os.getenv("DGB_IMAGE", "").strip()
@@ -54,7 +54,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.66-alpha"
+APP_VERSION = "0.7.67-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -980,6 +980,14 @@ def _update_pool_settings(
     if not addr:
         raise ValueError("payoutAddress is required")
 
+    # Miningcore's Bitcoin-family address parser for DigiByte currently expects a legacy/base58 address
+    # (typically starting with D/S on mainnet). A bech32 payout address (dgb1...) will crash Miningcore
+    # at pool startup, taking the UI and stratum down.
+    if addr.lower().startswith("dgb1"):
+        raise ValueError("payoutAddress must be a legacy/base58 DigiByte address (starts with D or S), not dgb1")
+    if not re.match(r"^[DS][1-9A-HJ-NP-Za-km-z]{25,40}$", addr):
+        raise ValueError("payoutAddress must be a legacy/base58 DigiByte address (starts with D or S)")
+
     validated = None
     validation_warning = None
     try:
@@ -1040,6 +1048,8 @@ def _update_pool_settings(
             if not isinstance(endpoint, dict):
                 endpoint = {"listenAddress": "0.0.0.0"}
                 ports[port] = endpoint
+            else:
+                endpoint["listenAddress"] = "0.0.0.0"
 
             vardiff = endpoint.get("varDiff") or {}
             if not isinstance(vardiff, dict):
