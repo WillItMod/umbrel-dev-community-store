@@ -5,6 +5,8 @@ WORKDIR /src
 RUN apt-get update && \
     apt-get -y install --no-install-recommends \
       build-essential \
+      cmake \
+      git \
       libssl-dev \
       pkg-config \
       libboost-all-dev \
