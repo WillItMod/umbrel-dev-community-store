@@ -268,7 +268,7 @@ services:
         fi
 
   dgbd:
-    image: ghcr.io/willitmod/digibyte:8.22.2
+    image: ghcr.io/willitmod/digibyte:8.26.1
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 15m30s
