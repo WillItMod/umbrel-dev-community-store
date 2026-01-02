@@ -59,7 +59,7 @@ jobs:
             --progress=plain \
             --platform linux/amd64,linux/arm64 \
             -f ./willitmod-dev-dgb/images/miningcore/Dockerfile \
-            -t ghcr.io/willitmod/miningcore:${TAG} \
+            -t ghcr.io/willitmod/axedgb-miningcore:${TAG} \
             --push \
             ./_vendor/miningcore 2>&1 | tee /tmp/buildx.log; then
             # GitHub limits annotation size; keep this short and focused.
