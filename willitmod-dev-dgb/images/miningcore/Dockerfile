@@ -29,8 +29,11 @@ RUN set -eux; \
     '}' \
     > /tmp/axedgb-multihash/exports_min.c; \
   gcc --version; \
-  ls -la /src/src/Native/libmultihash; \
+  test -f /src/src/Native/libmultihash/scryptn.c; \
+  test -f /src/src/Native/libmultihash/scryptn.h; \
+  test -f /src/src/Native/libmultihash/sha256.h; \
   gcc -shared -fPIC -O2 -std=gnu11 \
+    -I/src/src/Native/libmultihash \
     -o /tmp/axedgb-multihash/libmultihash.so \
     /tmp/axedgb-multihash/exports_min.c \
     /src/src/Native/libmultihash/scryptn.c
