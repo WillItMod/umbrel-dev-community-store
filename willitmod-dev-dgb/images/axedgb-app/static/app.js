@@ -393,6 +393,9 @@ function getStratumPort(algo) {
 }
 
 async function refresh() {
+  if (window.__refreshInFlight) return;
+  window.__refreshInFlight = true;
+  try {
   try {
     const res = await fetch('/api/node', { cache: 'no-store' });
     const node = await res.json().catch(() => ({}));
@@ -545,6 +548,9 @@ async function refresh() {
     renderWorkerDetails([]);
   }
 
+  } finally {
+    window.__refreshInFlight = false;
+  }
 }
 
 function setStratumUrl() {

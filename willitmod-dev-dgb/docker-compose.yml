@@ -130,10 +130,16 @@ services:
           # and Miningcore currently assumes notifications exists).
           if command -v jq >/dev/null 2>&1 && jq -e '.' >/dev/null 2>&1 < /data/pool/config/miningcore.json; then
             tmp="/data/pool/config/miningcore.json.tmp"
-            jq '
+            jq --argjson rpcport "$$DGB_RPC_PORT" '
               .notifications = (.notifications // {"enabled": false})
-              | (.pools |= (if type=="array" then map(if type=="object" then (.paymentProcessing = (.paymentProcessing // {"enabled": false})) else . end) else . end))
               | (.banning |= (if type=="object" then del(.manager) else . end))
+              | (.pools |= (if type=="array" then map(
+                  if type=="object" then
+                    (.paymentProcessing = (.paymentProcessing // {"enabled": false}))
+                    | (.blockRefreshInterval = ((.blockRefreshInterval // 500) | if . < 2000 then 2000 else . end))
+                    | (.daemons = ((.daemons // []) | (if type=="array" then map(if type=="object" then (.port=$rpcport) else . end) else . end)))
+                  else . end
+                ) else . end))
             ' /data/pool/config/miningcore.json > "$$tmp" && mv "$$tmp" /data/pool/config/miningcore.json
 
             # Ensure the Scrypt pool exists when upgrading from SHA256-only configs.
@@ -292,7 +298,7 @@ services:
         fi
 
   dgbd:
-    image: ghcr.io/willitmod/digibyte:8.26.1
+    image: ghcr.io/willitmod/digibyte:8.22.2
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 15m30s
@@ -345,7 +351,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.65-alpha
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.7.66-alpha
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
@@ -367,7 +373,7 @@ services:
       STRATUM_PORTS: "sha256:5678,scrypt:5679"
       MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
-      DGB_IMAGE: "ghcr.io/willitmod/digibyte:8.26.1"
+      DGB_IMAGE: "ghcr.io/willitmod/digibyte:8.22.2"
       MININGCORE_IMAGE: "ghcr.io/willitmod/miningcore:a553f62301f44c6df80891e408b6526d1dd98692"
       POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"

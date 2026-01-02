@@ -54,7 +54,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.7.65-alpha"
+APP_VERSION = "0.7.66-alpha"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -245,6 +245,9 @@ def _rpc_call(method: str, params=None):
             msg = str(err)
         raise RpcError(code, msg, raw=err)
     return data.get("result")
+
+
+NODE_STATUS_LOCK = threading.Lock()
 
 
 def _read_conf_kv_in_section(path: Path, section: str) -> dict:
@@ -543,8 +546,6 @@ def _update_miningcore_daemon_port(network: str):
 
         for pool in pools:
             if not isinstance(pool, dict):
-                continue
-            if str(pool.get("id") or "") != MININGCORE_POOL_ID:
                 continue
             daemons = pool.get("daemons") or []
             if not isinstance(daemons, list):
@@ -1880,6 +1881,35 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/node":
             reindex_requested = NODE_REINDEX_FLAG_PATH.exists()
             reindex_required = _detect_reindex_required()
+            cached = _read_node_cache()
+            if cached and (int(time.time()) - int(cached["t"])) <= 4:
+                payload = dict(cached["status"])
+                payload.update(
+                    {
+                        "cached": True,
+                        "lastSeen": int(cached["t"]),
+                        "reindexRequested": reindex_requested,
+                        "reindexRequired": reindex_required,
+                    }
+                )
+                return self._send(*_json(payload))
+
+            acquired = NODE_STATUS_LOCK.acquire(blocking=False)
+            if not acquired:
+                if cached:
+                    payload = dict(cached["status"])
+                    payload.update(
+                        {
+                            "cached": True,
+                            "lastSeen": int(cached["t"]),
+                            "error": "busy",
+                            "reindexRequested": reindex_requested,
+                            "reindexRequired": reindex_required,
+                        }
+                    )
+                    return self._send(*_json(payload))
+                return self._send(*_json({"error": "busy"}, status=503))
+
             try:
                 s = _node_status()
                 payload = dict(s)
@@ -1903,7 +1933,7 @@ class Handler(BaseHTTPRequestHandler):
                         "reindexRequired": reindex_required,
                     }
                     return self._send(*_json(payload))
-                cached = _read_node_cache()
+                cached = cached or _read_node_cache()
                 if cached:
                     payload = dict(cached["status"])
                     payload.update(
@@ -1928,6 +1958,12 @@ class Handler(BaseHTTPRequestHandler):
                         status=503,
                     )
                 )
+            finally:
+                if acquired:
+                    try:
+                        NODE_STATUS_LOCK.release()
+                    except Exception:
+                        pass
 
         if path == "/api/pool":
             algo = _algo_from_query(raw_path)
