@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy as builder
+FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS builder
 
 WORKDIR /src
 
@@ -18,23 +18,22 @@ RUN apt-get update && apt-get -y install --no-install-recommends \
 COPY . .
 
 # Build a minimal libmultihash for Scrypt (portable across amd64/arm64).
-RUN mkdir -p /tmp/axedgb-multihash && \
-    cat > /tmp/axedgb-multihash/exports_min.cpp <<'EOF'
+RUN set -eux; \
+  mkdir -p /tmp/axedgb-multihash; \
+  cat > /tmp/axedgb-multihash/exports_min.c <<'EOF'
 #include <stdint.h>
-
-extern "C" {
-  void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);
-}
-
-extern "C" void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)
+void scrypt_N_R_1_256(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len);
+__attribute__((visibility("default"))) void scrypt_export(const char* input, char* output, uint32_t N, uint32_t R, uint32_t input_len)
 {
   scrypt_N_R_1_256(input, output, N, R, input_len);
 }
 EOF
-
-RUN set -eux; \
-  gcc -c -fPIC -O2 -I/src/src/Native/libmultihash -o /tmp/axedgb-multihash/scryptn.o /src/src/Native/libmultihash/scryptn.c; \
-  g++ -shared -fPIC -O2 -std=c++11 -o /tmp/axedgb-multihash/libmultihash.so /tmp/axedgb-multihash/exports_min.cpp /tmp/axedgb-multihash/scryptn.o
+  gcc --version; \
+  ls -la /src/src/Native/libmultihash; \
+  gcc -shared -fPIC -O2 -std=gnu11 \
+    -o /tmp/axedgb-multihash/libmultihash.so \
+    /tmp/axedgb-multihash/exports_min.c \
+    /src/src/Native/libmultihash/scryptn.c
 
 # Publish Miningcore binaries.
 WORKDIR /src/src/Miningcore
