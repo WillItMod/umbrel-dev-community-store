@@ -2,6 +2,8 @@ FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy as builder
 
 WORKDIR /src
 
+ARG TARGETARCH
+
 RUN apt-get update && \
     apt-get -y install --no-install-recommends \
       build-essential \
@@ -12,12 +14,15 @@ RUN apt-get update && \
       libzmq5 \
       libzmq3-dev \
       ca-certificates \
-      curl && \
+      curl \
+      python3 && \
     rm -rf /var/lib/apt/lists/*
 
 # Miningcore source is provided as the Docker build context by the GitHub Actions workflow.
 COPY . .
 
+# libmultihash includes optional x86 SIMD implementations; buildx arm64 needs the portable ref variant.
+RUN python3 - <<'PY'\nimport os\nfrom pathlib import Path\narch = (os.environ.get('TARGETARCH') or '').strip()\nif arch and arch != 'amd64':\n    exports = Path('src/Native/libmultihash/exports.cpp')\n    text = exports.read_text(encoding='utf-8', errors='replace')\n    old = '#ifdef _WIN32\\n#include \"blake2/ref/blake2.h\"\\n#else\\n#include \"blake2/sse/blake2.h\"\\n#endif'\n    new = '#ifdef _WIN32\\n#include \"blake2/ref/blake2.h\"\\n#elif defined(__x86_64__) || defined(__i386__)\\n#include \"blake2/sse/blake2.h\"\\n#else\\n#include \"blake2/ref/blake2.h\"\\n#endif'\n    if old in text:\n        text = text.replace(old, new)\n        exports.write_text(text, encoding='utf-8')\n\n    mk = Path('src/Native/libmultihash/Makefile')\n    mkt = mk.read_text(encoding='utf-8', errors='replace')\n    mkt = mkt.replace('blake2/sse/blake2s.o blake2/sse/blake2b.o', 'blake2/ref/blake2s-ref.o blake2/ref/blake2b-ref.o')\n    mk.write_text(mkt, encoding='utf-8')\nPY\n+
 # Build the native multihash library (required for scrypt and several other algos).
 WORKDIR /src/src/Native/libmultihash
 RUN make clean && make
