@@ -111,12 +111,12 @@
             <div class="axe-stat">
               <div class="axe-stat__k">Hashrate</div>
               <div class="axe-stat__v" id="hashrate-summary">-</div>
-              <div class="axe-stat__k mt-1">TH/s (best-effort)</div>
+              <div class="axe-stat__k mt-1">TH/s (accepted shares, 10m)</div>
             </div>
             <div class="axe-stat">
-              <div class="axe-stat__k">Best difficulty</div>
-              <div class="axe-stat__v" id="bestdiff-summary">-</div>
-              <div class="axe-stat__k mt-1">Since last block</div>
+              <div class="axe-stat__k">ETA to find block</div>
+              <div class="axe-stat__v" id="eta-summary">-</div>
+              <div class="axe-stat__k mt-1 text-slate-400">Based on pool hashrate</div>
             </div>
           </div>
         </section>
@@ -170,7 +170,7 @@
                 <div class="axe-stat">
                   <div class="axe-stat__k">Hashrate</div>
                   <div class="axe-stat__v" id="hashrate">-</div>
-                  <div class="axe-stat__k mt-1">TH/s (best-effort)</div>
+                  <div class="axe-stat__k mt-1">TH/s (accepted shares, 10m)</div>
                   <div class="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
                     <div class="rounded-xl border border-white/10 bg-black/35 px-3 py-2">
                       <div class="axe-shadow-heavy text-[10px] font-extrabold uppercase tracking-wider text-slate-200">1m</div>
@@ -208,10 +208,22 @@
                   <div class="axe-stat__k mt-1" id="difficulty-sub">-</div>
                 </div>
                 <div class="axe-stat">
-                  <div class="axe-stat__k">Best difficulty (since block)</div>
-                  <div class="axe-stat__v" id="bestdiff-since">-</div>
-                  <div class="axe-stat__k mt-1">Best difficulty (all-time)</div>
-                  <div class="axe-stat__v mt-1" id="bestdiff-all">-</div>
+                  <div class="axe-stat__k">ETA to find block</div>
+                  <div class="axe-stat__v" id="eta">-</div>
+                  <div class="axe-stat__k mt-1 text-slate-400">Based on pool hashrate</div>
+                </div>
+                <div class="axe-stat">
+                  <div class="axe-stat__k">Accepted shares</div>
+                  <div class="mt-2 grid grid-cols-2 gap-2">
+                    <div class="rounded-xl border border-white/10 bg-black/35 px-3 py-2">
+                      <div class="axe-shadow-heavy text-[10px] font-extrabold uppercase tracking-wider text-slate-200">10m</div>
+                      <div class="axe-shadow-heavy mt-1 font-mono text-sm text-white" id="shares-10m">-</div>
+                    </div>
+                    <div class="rounded-xl border border-white/10 bg-black/35 px-3 py-2">
+                      <div class="axe-shadow-heavy text-[10px] font-extrabold uppercase tracking-wider text-slate-200">1h</div>
+                      <div class="axe-shadow-heavy mt-1 font-mono text-sm text-white" id="shares-1h">-</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

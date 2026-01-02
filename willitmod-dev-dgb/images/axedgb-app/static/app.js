@@ -69,6 +69,17 @@ function formatCompactNumber(v) {
   return `${n.toFixed(3)}`;
 }
 
+function formatEta(seconds) {
+  const s = Number(seconds);
+  if (!Number.isFinite(s) || s <= 0) return '-';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hr`;
+  const d = Math.round(h / 24);
+  return `${d} days`;
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -349,7 +360,7 @@ function renderWorkerDetails(miners) {
   for (const m of list.slice(0, 50)) {
     const name = m.worker ? String(m.worker) : shortenMiner(m.miner);
     const sub = m.worker ? shortenMiner(m.miner) : '';
-    const hr = formatHashrateFromTHS(m.hashrate_ths);
+    const hr = formatHashrateFromTHS(m.hashrate_ths_live_10m != null ? m.hashrate_ths_live_10m : m.hashrate_ths);
     const last = formatAge(m.lastShare);
 
     const left = `
@@ -479,14 +490,14 @@ async function refresh() {
     const pool = await fetchJson(`/api/pool?algo=${encodeURIComponent(algo)}`);
     document.getElementById('workers').textContent = pool.workers ?? '-';
     document.getElementById('hashrate').textContent = formatTHS(pool.hashrate_ths);
-    const bestSince = pool && pool.best_difficulty_since_block;
-    const bestAll = pool && pool.best_difficulty_all;
-    const bestSinceEl = document.getElementById('bestdiff-since');
-    const bestAllEl = document.getElementById('bestdiff-all');
-    const bestSummaryEl = document.getElementById('bestdiff-summary');
-    if (bestSinceEl) bestSinceEl.textContent = formatCompactNumber(bestSince);
-    if (bestAllEl) bestAllEl.textContent = formatCompactNumber(bestAll);
-    if (bestSummaryEl) bestSummaryEl.textContent = formatCompactNumber(bestSince);
+    const etaEl = document.getElementById('eta');
+    if (etaEl) etaEl.textContent = formatEta(pool && pool.eta_seconds);
+    const etaSummary = document.getElementById('eta-summary');
+    if (etaSummary) etaSummary.textContent = formatEta(pool && pool.eta_seconds);
+    const sh10 = document.getElementById('shares-10m');
+    const sh1h = document.getElementById('shares-1h');
+    if (sh10) sh10.textContent = String(pool && pool.shares_10m != null ? pool.shares_10m : '-');
+    if (sh1h) sh1h.textContent = String(pool && pool.shares_1h != null ? pool.shares_1h : '-');
     document.getElementById('workers-summary').textContent = pool.workers ?? '-';
     document.getElementById('hashrate-summary').textContent = formatTHS(pool.hashrate_ths);
 
@@ -542,13 +553,16 @@ async function refresh() {
     document.getElementById('hashrate').textContent = '-';
     const lastShareEl = document.getElementById('last-share');
     if (lastShareEl) lastShareEl.textContent = '-';
+    const etaEl = document.getElementById('eta');
+    if (etaEl) etaEl.textContent = '-';
+    const etaSummary = document.getElementById('eta-summary');
+    if (etaSummary) etaSummary.textContent = '-';
+    const sh10 = document.getElementById('shares-10m');
+    const sh1h = document.getElementById('shares-1h');
+    if (sh10) sh10.textContent = '-';
+    if (sh1h) sh1h.textContent = '-';
     document.getElementById('workers-summary').textContent = '-';
     document.getElementById('hashrate-summary').textContent = '-';
-    const bestIds = ['bestdiff-since', 'bestdiff-all', 'bestdiff-summary'];
-    for (const id of bestIds) {
-      const el = document.getElementById(id);
-      if (el) el.textContent = '-';
-    }
 
     const diffEl = document.getElementById('difficulty');
     const diffSub = document.getElementById('difficulty-sub');

@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.20"
+APP_VERSION = "0.8.21"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -205,11 +205,16 @@ def _pool_workers_from_db(pool_id: str):
         )
         rows = cur.fetchall() or []
 
-        # Pull "last share" timestamps from shares (minerstats.created is a snapshot timestamp, not the last share time).
-        # Limit the scan window to keep it cheap even on busy pools.
+        # Pull "last share" timestamps and an estimated hashrate from shares
+        # (minerstats.created is a snapshot timestamp, not the last share time).
+        # H/s over 10m ≈ sum(difficulty)*2^32 / 600.
         cur.execute(
             """
-            SELECT miner, worker, MAX(created) AS last_share
+            SELECT
+              miner,
+              worker,
+              MAX(created) AS last_share,
+              COALESCE(SUM(CASE WHEN created >= (NOW() AT TIME ZONE 'utc') - INTERVAL '10 minutes' THEN difficulty ELSE 0 END), 0) AS sumdiff_10m
             FROM shares
             WHERE poolid = %s AND created >= (NOW() AT TIME ZONE 'utc') - INTERVAL '2 days'
             GROUP BY miner, worker
@@ -226,16 +231,22 @@ def _pool_workers_from_db(pool_id: str):
             pass
 
     last_share_by_key: dict[tuple[str, str | None], datetime] = {}
+    hashrate_hs_10m_by_key: dict[tuple[str, str | None], float] = {}
     for r in share_rows:
         try:
-            miner, worker, last_share = r
+            miner, worker, last_share, sumdiff_10m = r
         except Exception:
-            continue
-        if not isinstance(last_share, datetime):
             continue
         miner_s = str(miner or "")
         worker_s = str(worker or "").strip() or None
-        last_share_by_key[(miner_s, worker_s)] = last_share
+        if isinstance(last_share, datetime):
+            last_share_by_key[(miner_s, worker_s)] = last_share
+        try:
+            sumdiff_f = float(sumdiff_10m) if sumdiff_10m is not None else 0.0
+            if math.isfinite(sumdiff_f) and sumdiff_f > 0:
+                hashrate_hs_10m_by_key[(miner_s, worker_s)] = (sumdiff_f * (2**32)) / (10 * 60)
+        except Exception:
+            pass
 
     out = []
     for r in rows:
@@ -263,8 +274,12 @@ def _pool_workers_from_db(pool_id: str):
             except Exception:
                 pass
 
-        hashrate_ths = None
-        if hashrate_hs_f is not None:
+        hashrate_hs_live = hashrate_hs_10m_by_key.get((miner_s, worker_s))
+        hashrate_ths_live = (hashrate_hs_live / 1e12) if hashrate_hs_live is not None else None
+
+        # Prefer live estimate from accepted shares, fallback to Miningcore minerstats estimate.
+        hashrate_ths = hashrate_ths_live
+        if hashrate_ths is None and hashrate_hs_f is not None:
             hashrate_ths = hashrate_hs_f / 1e12
 
         last_share = None
@@ -282,6 +297,8 @@ def _pool_workers_from_db(pool_id: str):
                 "worker": worker_s,
                 "hashrate_hs": hashrate_hs_f,
                 "hashrate_ths": hashrate_ths,
+                "hashrate_hs_live_10m": hashrate_hs_live,
+                "hashrate_ths_live_10m": hashrate_ths_live,
                 "lastShare": last_share,
                 "sharesPerSecond": shares_per_s,
             }
@@ -1403,6 +1420,19 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
         except Exception:
             share_health = {}
 
+        hashrate_ths_best_effort = hashrate_ths
+        hashrate_ths_live = None
+        try:
+            hs10m = share_health.get("hashrate_hs_10m")
+            hs10m_f = float(hs10m) if hs10m is not None else None
+            if hs10m_f is not None and math.isfinite(hs10m_f) and hs10m_f > 0:
+                hashrate_ths_live = hs10m_f / 1e12
+        except Exception:
+            hashrate_ths_live = None
+
+        if hashrate_ths_live is not None:
+            hashrate_ths = hashrate_ths_live
+
         eta_seconds = None
         try:
             if hashrate_ths and network_difficulty:
@@ -1419,6 +1449,8 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "algo": algo,
             "workers": workers_i,
             "hashrate_ths": hashrate_ths,
+            "hashrate_ths_best_effort": hashrate_ths_best_effort,
+            "hashrate_ths_live_10m": hashrate_ths_live,
             "total_blocks": total_blocks,
             "network_difficulty": network_difficulty,
             "network_height": network_height,
@@ -1476,6 +1508,8 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             status.setdefault("shares_1h", None)
             status.setdefault("last_share_at", None)
             status.setdefault("eta_seconds", None)
+            status.setdefault("hashrate_ths_best_effort", None)
+            status.setdefault("hashrate_ths_live_10m", None)
             status.setdefault("hashrates_ths", {})
             return status
 
@@ -1495,6 +1529,8 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "shares_1h": None,
             "last_share_at": None,
             "eta_seconds": None,
+            "hashrate_ths_best_effort": None,
+            "hashrate_ths_live_10m": None,
             "hashrates_ths": {},
             "cached": False,
             "lastSeen": int(time.time()),
@@ -2137,11 +2173,12 @@ def _pool_share_health(pool_id: str) -> dict:
         try:
             cur = conn.cursor()
             cur.execute(
-                "SELECT COUNT(*) FROM shares WHERE poolid=%s AND created >= %s",
+                "SELECT COUNT(*), COALESCE(SUM(difficulty), 0) FROM shares WHERE poolid=%s AND created >= %s",
                 (pool_id, cutoff_10m),
             )
             row = cur.fetchone()
             shares_10m = int(row[0]) if row and row[0] is not None else 0
+            sumdiff_10m = float(row[1]) if row and row[1] is not None else 0.0
 
             cur.execute(
                 "SELECT COUNT(*) FROM shares WHERE poolid=%s AND created >= %s",
@@ -2165,7 +2202,21 @@ def _pool_share_health(pool_id: str) -> dict:
         return {}
 
     last_share_iso = _iso_z(last_share_created) if isinstance(last_share_created, datetime) else None
-    return {"shares_10m": shares_10m, "shares_1h": shares_1h, "last_share_at": last_share_iso}
+    # Estimate pool hashrate from accepted shares over the last 10 minutes:
+    # H/s ≈ sum(share_difficulty) * 2^32 / window_seconds
+    hashrate_hs_10m = None
+    try:
+        if sumdiff_10m and sumdiff_10m > 0:
+            hashrate_hs_10m = (sumdiff_10m * (2**32)) / (10 * 60)
+    except Exception:
+        hashrate_hs_10m = None
+
+    return {
+        "shares_10m": shares_10m,
+        "shares_1h": shares_1h,
+        "last_share_at": last_share_iso,
+        "hashrate_hs_10m": hashrate_hs_10m,
+    }
 
 
 def _series_sampler(stop_event: threading.Event):
