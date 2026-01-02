@@ -49,11 +49,17 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          set -eux
-          docker buildx build \
+          set -euo pipefail
+          set -x
+
+          if ! docker buildx build \
             --progress=plain \
             --platform linux/amd64,linux/arm64 \
             -f ./_vendor/miningcore/Dockerfile \
             -t ghcr.io/willitmod/miningcore:${TAG} \
             --push \
-            ./_vendor/miningcore
+            ./_vendor/miningcore 2>&1 | tee /tmp/buildx.log; then
+            msg="$(tail -n 200 /tmp/buildx.log | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/g' | tr -d '\n')"
+            echo "::error title=buildx tail (last 200 lines)::${msg}"
+            exit 1
+          fi
