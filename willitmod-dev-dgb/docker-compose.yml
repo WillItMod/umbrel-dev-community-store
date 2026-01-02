@@ -6,6 +6,9 @@ services:
       # Use a unique DNS alias to avoid collisions on Umbrel's shared Docker network.
       APP_HOST: axedgb-app
       APP_PORT: 3000
+      # Umbrel's legacy app_proxy fragment expects JWT_SECRET but does not source ~/.env.
+      # Use Umbrel's per-install APP_PASSWORD so auth tokens can be verified reliably.
+      JWT_SECRET: "${APP_PASSWORD}"
 
   init:
     image: alpine:3.22.1
