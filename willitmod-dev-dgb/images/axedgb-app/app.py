@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.21"
+APP_VERSION = "0.8.22"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -207,16 +207,25 @@ def _pool_workers_from_db(pool_id: str):
 
         # Pull "last share" timestamps and an estimated hashrate from shares
         # (minerstats.created is a snapshot timestamp, not the last share time).
-        # H/s over 10m ≈ sum(difficulty)*2^32 / 600.
+        #
+        # H/s ≈ sum(difficulty) * 2^32 / elapsed_seconds
+        #
+        # Notes:
+        # - We cap elapsed_seconds at the window size (10m) to avoid inflating
+        #   hashrate when there are gaps.
+        # - We floor elapsed_seconds at 60s to avoid huge spikes on the first
+        #   1-2 accepted shares.
         cur.execute(
             """
             SELECT
               miner,
               worker,
               MAX(created) AS last_share,
-              COALESCE(SUM(CASE WHEN created >= (NOW() AT TIME ZONE 'utc') - INTERVAL '10 minutes' THEN difficulty ELSE 0 END), 0) AS sumdiff_10m
+              MIN(CASE WHEN created >= NOW() - INTERVAL '10 minutes' THEN created END) AS first_share_10m,
+              MAX(CASE WHEN created >= NOW() - INTERVAL '10 minutes' THEN created END) AS last_share_10m,
+              COALESCE(SUM(CASE WHEN created >= NOW() - INTERVAL '10 minutes' THEN difficulty ELSE 0 END), 0) AS sumdiff_10m
             FROM shares
-            WHERE poolid = %s AND created >= (NOW() AT TIME ZONE 'utc') - INTERVAL '2 days'
+            WHERE poolid = %s AND created >= NOW() - INTERVAL '2 days'
             GROUP BY miner, worker
             """,
             (pool_id,),
@@ -234,7 +243,7 @@ def _pool_workers_from_db(pool_id: str):
     hashrate_hs_10m_by_key: dict[tuple[str, str | None], float] = {}
     for r in share_rows:
         try:
-            miner, worker, last_share, sumdiff_10m = r
+            miner, worker, last_share, first_share_10m, last_share_10m, sumdiff_10m = r
         except Exception:
             continue
         miner_s = str(miner or "")
@@ -244,7 +253,20 @@ def _pool_workers_from_db(pool_id: str):
         try:
             sumdiff_f = float(sumdiff_10m) if sumdiff_10m is not None else 0.0
             if math.isfinite(sumdiff_f) and sumdiff_f > 0:
-                hashrate_hs_10m_by_key[(miner_s, worker_s)] = (sumdiff_f * (2**32)) / (10 * 60)
+                span_s = None
+                try:
+                    if isinstance(first_share_10m, datetime) and isinstance(last_share_10m, datetime):
+                        span_s = (last_share_10m - first_share_10m).total_seconds()
+                    elif isinstance(first_share_10m, datetime):
+                        span_s = (datetime.now(timezone.utc) - first_share_10m).total_seconds()
+                except Exception:
+                    span_s = None
+
+                window_s = 10 * 60
+                if span_s is None or not math.isfinite(float(span_s)) or span_s <= 0:
+                    span_s = window_s
+                span_s = max(60.0, min(float(span_s), float(window_s)))
+                hashrate_hs_10m_by_key[(miner_s, worker_s)] = (sumdiff_f * (2**32)) / span_s
         except Exception:
             pass
 
@@ -2173,12 +2195,14 @@ def _pool_share_health(pool_id: str) -> dict:
         try:
             cur = conn.cursor()
             cur.execute(
-                "SELECT COUNT(*), COALESCE(SUM(difficulty), 0) FROM shares WHERE poolid=%s AND created >= %s",
+                "SELECT COUNT(*), COALESCE(SUM(difficulty), 0), MIN(created), MAX(created) FROM shares WHERE poolid=%s AND created >= %s",
                 (pool_id, cutoff_10m),
             )
             row = cur.fetchone()
             shares_10m = int(row[0]) if row and row[0] is not None else 0
             sumdiff_10m = float(row[1]) if row and row[1] is not None else 0.0
+            first_share_10m = row[2] if row and len(row) > 2 else None
+            last_share_10m = row[3] if row and len(row) > 3 else None
 
             cur.execute(
                 "SELECT COUNT(*) FROM shares WHERE poolid=%s AND created >= %s",
@@ -2203,11 +2227,21 @@ def _pool_share_health(pool_id: str) -> dict:
 
     last_share_iso = _iso_z(last_share_created) if isinstance(last_share_created, datetime) else None
     # Estimate pool hashrate from accepted shares over the last 10 minutes:
-    # H/s ≈ sum(share_difficulty) * 2^32 / window_seconds
+    # H/s ≈ sum(share_difficulty) * 2^32 / elapsed_seconds (capped to 10m, floored to 60s)
     hashrate_hs_10m = None
     try:
         if sumdiff_10m and sumdiff_10m > 0:
-            hashrate_hs_10m = (sumdiff_10m * (2**32)) / (10 * 60)
+            window_s = 10 * 60
+            span_s = None
+            if isinstance(first_share_10m, datetime) and isinstance(last_share_10m, datetime):
+                try:
+                    span_s = (last_share_10m - first_share_10m).total_seconds()
+                except Exception:
+                    span_s = None
+            if span_s is None or not math.isfinite(float(span_s)) or span_s <= 0:
+                span_s = window_s
+            span_s = max(60.0, min(float(span_s), float(window_s)))
+            hashrate_hs_10m = (sumdiff_10m * (2**32)) / span_s
     except Exception:
         hashrate_hs_10m = None
 
