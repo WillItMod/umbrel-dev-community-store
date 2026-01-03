@@ -27,12 +27,6 @@ jobs:
           path: _vendor/miningcore
           fetch-depth: 0
 
-      - name: Apply AxeDGB Miningcore patches
-        run: |
-          set -eux
-          cd _vendor/miningcore
-          git apply ../../willitmod-dev-dgb/images/miningcore/patches/*.patch
-
       - name: Ensure upstream checkout has a branch (GitVersion)
         run: |
           set -eux

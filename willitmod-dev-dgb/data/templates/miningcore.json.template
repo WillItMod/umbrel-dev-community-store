@@ -41,9 +41,9 @@
   "pools": [
     {
       "id": "dgb-sha256-1",
-      "enabled": true,
+      "enabled": false,
       "coin": "digibyte-sha256",
-      "address": "${PAYOUT_ADDRESS}",
+      "address": "",
       "blockRefreshInterval": 500,
       "jobRebroadcastTimeout": 10,
       "clientConnectionTimeout": 600,
@@ -80,9 +80,9 @@
     },
     {
       "id": "dgb-scrypt-1",
-      "enabled": true,
+      "enabled": false,
       "coin": "digibyte-scrypt",
-      "address": "${PAYOUT_ADDRESS}",
+      "address": "",
       "blockRefreshInterval": 500,
       "jobRebroadcastTimeout": 10,
       "clientConnectionTimeout": 600,

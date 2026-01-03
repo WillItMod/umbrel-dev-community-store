@@ -42,7 +42,8 @@ CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
 # This is a deterministic "burn" address (hash160=0x00..00, base58check version=0x1e)
 # so no real wallet address is shipped in the repo, and the pool remains "not configured"
 # until the user sets their own payout address.
-POOL_PLACEHOLDER_PAYOUT_ADDRESS = "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC"
+# No payout address is shipped with the app; the pool stays disabled until the user sets one.
+POOL_PLACEHOLDER_PAYOUT_ADDRESS = ""
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 DGB_IMAGE = os.getenv("DGB_IMAGE", "").strip()
@@ -63,7 +64,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.23"
+APP_VERSION = "0.8.24"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1188,7 +1189,7 @@ def _pool_settings():
         "startdiff": _to_int(startdiff, 1024),
         "maxdiff": _to_int(maxdiff, 0),
         "warning": (
-            "Set a payout address before mining. Miningcore uses this address when generating blocks."
+            "Set a payout address before mining, then restart the app. Miningcore uses this address when generating blocks."
             if not configured
             else None
         ),
@@ -1206,33 +1207,20 @@ def _update_pool_settings(
     if not addr:
         raise ValueError("payoutAddress is required")
 
-    # Accept Base58 (D/S...) and Bech32 (dgb1...) payout addresses.
-    # We rely on DigiByte Core's RPC validation when available.
-    #
-    # Note: Unlike BCH CashAddr, DigiByte Bech32 is not just a different "encoding" of the same
-    # destination as legacy Base58; it can represent different script types (SegWit). So we do not
-    # attempt any conversion here.
-    prefix_ok = bool(re.match(r"^(?i:(dgb1|[ds]))", addr))
-
     validated = None
     validation_warning = None
     try:
         res = _rpc_call("validateaddress", [addr]) or {}
     except Exception:
-        res = None
-        validated = None
-        validation_warning = (
-            "Node RPC unavailable; saved without RPC validation. Double-check your address, then restart the app."
-        )
+        raise ValueError("Node is still starting/syncing; can't verify payout address yet. Try again in a few minutes.")
     else:
         validated = bool(res.get("isvalid")) if isinstance(res, dict) else False
         if not validated:
             raise ValueError("payoutAddress is not a valid DigiByte address")
-        # If RPC says it's valid, accept it even if the prefix looks unfamiliar.
-        prefix_ok = True
 
-    if not prefix_ok:
-        raise ValueError("payoutAddress must look like a DigiByte address (D/S... or dgb1...)")
+    # Miningcore currently cannot use DigiByte bech32 (dgb1...) payout addresses.
+    if addr.lower().startswith("dgb1"):
+        raise ValueError("payoutAddress must be a legacy/base58 DigiByte address (not dgb1)")
 
     conf = _read_miningcore_conf()
     pools = conf.get("pools")

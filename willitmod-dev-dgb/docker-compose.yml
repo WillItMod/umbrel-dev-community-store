@@ -21,10 +21,7 @@ services:
       DGB_P2P_PORT: "12024"
       DGB_RPC_PORT: "14022"
       DGB_ZMQ_HASHBLOCK_PORT: "28344"
-      # Miningcore requires a syntactically valid payout address at startup.
-      # This is a deterministic "burn" address (no real wallet address is shipped in the repo).
-      # Stratum ports default to 127.0.0.1 (see miningcore.json.template) so external mining won't work until configured.
-      PAYOUT_ADDRESS: "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC"
+      # No payout address is shipped with the app. The pool stays disabled until the user sets one in Settings.
       DB_HOST: "postgres"
       DB_USER: "miningcore"
       DB_PASSWORD: "${APP_PASSWORD}"
@@ -153,6 +150,8 @@ services:
             if ! jq -e '.pools[]? | select(.id=="dgb-scrypt-1")' /data/pool/config/miningcore.json >/dev/null 2>&1; then
               echo "[axedgb] Adding dgb-scrypt-1 Miningcore pool"
               base_addr="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | .address // empty' /data/pool/config/miningcore.json | head -n 1)"
+              base_enabled="true"
+              if [ -z "$$base_addr" ]; then base_enabled="false"; fi
               base_diff="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|to_entries[0].value.difficulty // 1024)' /data/pool/config/miningcore.json | head -n 1)"
               base_mindiff="$(jq -r '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|to_entries[0].value.varDiff.minDiff // 1024)' /data/pool/config/miningcore.json | head -n 1)"
               base_maxdiff_json="$(jq -c '.pools[]? | select(.id=="dgb-sha256-1") | (.ports|to_entries[0].value.varDiff.maxDiff // null)' /data/pool/config/miningcore.json | head -n 1)"
@@ -162,6 +161,7 @@ services:
 
               tmp2="/data/pool/config/miningcore.json.tmp2"
               jq --arg addr "$$base_addr" \
+                 --argjson enabled "$$base_enabled" \
                  --argjson diff "$$base_diff" \
                  --argjson mindiff "$$base_mindiff" \
                  --argjson maxdiff "$$base_maxdiff_json" \
@@ -169,7 +169,7 @@ services:
                  '
                  .pools = (.pools // []) + [{
                    "id": "dgb-scrypt-1",
-                   "enabled": true,
+                   "enabled": $$enabled,
                    "coin": "digibyte-scrypt",
                    "address": $$addr,
                    "blockRefreshInterval": 500,
@@ -193,6 +193,17 @@ services:
                    "daemons": $$daemons
                  }]
                  ' /data/pool/config/miningcore.json > "$$tmp2" && mv "$$tmp2" /data/pool/config/miningcore.json
+            fi
+
+            # Safety: prevent accidental/unsupported payout addresses from breaking Miningcore or paying to a placeholder.
+            # - Miningcore currently crashes on DigiByte bech32 (dgb1...) pool addresses.
+            # - Older installs used a deterministic placeholder ("burn") address.
+            #
+            # In both cases: disable pools and clear the address so the UI can come up and the user can set a real legacy address.
+            if jq -r '.pools[]?.address // ""' /data/pool/config/miningcore.json | grep -qiE '^(dgb1|D596YFweJQuHY1BbjazZYmAbt8jJPbKehC)$'; then
+              echo "[axedgb] Payout address requires user action; disabling pools until a real legacy address is set"
+              tmp3="/data/pool/config/miningcore.json.tmp3"
+              jq '(.pools[]? | select(.id=="dgb-sha256-1" or .id=="dgb-scrypt-1") | .enabled=false | .address="") | .' /data/pool/config/miningcore.json > "$$tmp3" && mv "$$tmp3" /data/pool/config/miningcore.json
             fi
           fi
         fi
@@ -343,7 +354,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/postgres:/var/lib/postgresql/data
 
   miningcore:
-    image: ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r21
+    image: ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r20
     restart: unless-stopped
     depends_on:
       - postgres
@@ -358,7 +369,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.23
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.24
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
@@ -382,6 +393,6 @@ services:
       MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
       DGB_IMAGE: "ghcr.io/willitmod/digibyte:8.22.2"
-      MININGCORE_IMAGE: "ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r21"
+      MININGCORE_IMAGE: "ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r20"
       POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"
