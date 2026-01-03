@@ -215,6 +215,14 @@ services:
           fi
         fi
 
+        # Ensure the UI container can update the payout address.
+        # Previous init scripts (and some upgrade paths) could leave this file owned by root.
+        if [ -f /data/pool/config/miningcore.json ]; then
+          chmod 664 /data/pool/config/miningcore.json 2>/dev/null || true
+          chown 1000:1000 /data/pool/config/miningcore.json 2>/dev/null || true
+        fi
+        chown -R 1000:1000 /data/pool/config 2>/dev/null || true
+
         # Ensure Miningcore has a coins.json available at runtime.
         # Our Miningcore container expects this file next to the binary; without it, the API can crash on startup.
         if [ ! -f /data/pool/config/coins.json ]; then
@@ -382,7 +390,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.34
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.35
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s

@@ -5,6 +5,8 @@ import math
 import os
 import platform
 import re
+import errno
+import tempfile
 import threading
 import time
 import urllib.request
@@ -65,7 +67,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.34"
+APP_VERSION = "0.8.35"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1066,6 +1068,42 @@ def _read_miningcore_conf() -> dict:
     return _extract_json_obj(MININGCORE_CONF_PATH.read_text(encoding="utf-8", errors="replace"))
 
 
+def _atomic_write_text(path: Path, text: str, *, encoding: str = "utf-8"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding=encoding,
+            dir=str(path.parent),
+            prefix=f".{path.name}.tmp-",
+            delete=False,
+        ) as f:
+            tmp_path = Path(f.name)
+            f.write(text)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+
+        try:
+            if path.exists():
+                os.chmod(tmp_path, path.stat().st_mode)
+        except Exception:
+            pass
+
+        os.replace(tmp_path, path)
+    except Exception:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        raise
+
+
 def _write_miningcore_conf(conf: dict):
     try:
         if isinstance(conf, dict):
@@ -1085,8 +1123,16 @@ def _write_miningcore_conf(conf: dict):
                         pp.setdefault("enabled", False)
     except Exception:
         pass
-    MININGCORE_CONF_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MININGCORE_CONF_PATH.write_text(json.dumps(conf, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        _atomic_write_text(MININGCORE_CONF_PATH, json.dumps(conf, indent=2, sort_keys=True) + "\n")
+    except OSError as e:
+        if getattr(e, "errno", None) not in (errno.EACCES, errno.EROFS):
+            raise
+        raise ValueError(
+            f"Cannot write Miningcore config at '{MININGCORE_CONF_PATH}' (permission denied). "
+            "This usually means the file is owned by root due to an older install; restart the app to run migrations, "
+            "or fix permissions on /data/pool/config/miningcore.json."
+        )
 
 
 def _read_pool_settings_state() -> dict:
