@@ -41,9 +41,9 @@
   "pools": [
     {
       "id": "dgb-sha256-1",
-      "enabled": false,
+      "enabled": true,
       "coin": "digibyte-sha256",
-      "address": "",
+      "address": "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC",
       "blockRefreshInterval": 500,
       "jobRebroadcastTimeout": 10,
       "clientConnectionTimeout": 600,
@@ -58,7 +58,7 @@
       },
       "ports": {
         "3333": {
-          "listenAddress": "0.0.0.0",
+          "listenAddress": "127.0.0.1",
           "difficulty": ${STARTDIFF},
           "varDiff": {
             "minDiff": ${MINDIFF},
@@ -80,9 +80,9 @@
     },
     {
       "id": "dgb-scrypt-1",
-      "enabled": false,
+      "enabled": true,
       "coin": "digibyte-scrypt",
-      "address": "",
+      "address": "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC",
       "blockRefreshInterval": 500,
       "jobRebroadcastTimeout": 10,
       "clientConnectionTimeout": 600,
@@ -97,7 +97,7 @@
       },
       "ports": {
         "3334": {
-          "listenAddress": "0.0.0.0",
+          "listenAddress": "127.0.0.1",
           "difficulty": ${STARTDIFF},
           "varDiff": {
             "minDiff": ${MINDIFF},

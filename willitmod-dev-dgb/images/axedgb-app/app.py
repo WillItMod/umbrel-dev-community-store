@@ -42,8 +42,9 @@ CHECKIN_STATE_PATH = STATE_DIR / "checkin.json"
 # This is a deterministic "burn" address (hash160=0x00..00, base58check version=0x1e)
 # so no real wallet address is shipped in the repo, and the pool remains "not configured"
 # until the user sets their own payout address.
-# No payout address is shipped with the app; the pool stays disabled until the user sets one.
-POOL_PLACEHOLDER_PAYOUT_ADDRESS = ""
+# Placeholder address used to keep Miningcore running before the user configures a payout address.
+# Stratum stays bound to localhost until a real address is set.
+POOL_PLACEHOLDER_PAYOUT_ADDRESS = "D596YFweJQuHY1BbjazZYmAbt8jJPbKehC"
 
 APP_CHANNEL = os.getenv("APP_CHANNEL", "").strip()
 DGB_IMAGE = os.getenv("DGB_IMAGE", "").strip()
@@ -64,7 +65,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.24"
+APP_VERSION = "0.8.25"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1174,6 +1175,10 @@ def _pool_settings():
 
     payout_address = conf_addr
     configured = bool(payout_address) and payout_address != POOL_PLACEHOLDER_PAYOUT_ADDRESS
+    if not configured:
+        payout_address = ""
+        validated = None
+        validation_warning = None
 
     if validated is not None:
         validated = bool(validated)
