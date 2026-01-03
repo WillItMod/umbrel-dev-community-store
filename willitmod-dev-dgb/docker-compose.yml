@@ -212,22 +212,22 @@ services:
                   --argjson maxdiff "$$desired_maxdiff" '
                   (.pools |= (if type=="array" then map(
                     if type=="object" and .id=="dgb-sha256-1" then
-                      (.address=$addr)
+                      (.address=$$addr)
                       | (.ports = (.ports // {}))
                       | (.ports["3333"] = ((.ports["3333"] // {})
-                          | (.difficulty=$startdiff)
+                          | (.difficulty=$$startdiff)
                           | (.varDiff = (.varDiff // {}))
-                          | (.varDiff.minDiff=$mindiff)
-                          | (.varDiff.maxDiff=(if $maxdiff==0 then null else $maxdiff end))
+                          | (.varDiff.minDiff=$$mindiff)
+                          | (.varDiff.maxDiff=(if $$maxdiff==0 then null else $$maxdiff end))
                         ))
                     elif type=="object" and .id=="dgb-scrypt-1" then
-                      (.address=$addr)
+                      (.address=$$addr)
                       | (.ports = (.ports // {}))
                       | (.ports["3334"] = ((.ports["3334"] // {})
-                          | (.difficulty=$startdiff)
+                          | (.difficulty=$$startdiff)
                           | (.varDiff = (.varDiff // {}))
-                          | (.varDiff.minDiff=$mindiff)
-                          | (.varDiff.maxDiff=(if $maxdiff==0 then null else $maxdiff end))
+                          | (.varDiff.minDiff=$$mindiff)
+                          | (.varDiff.maxDiff=(if $$maxdiff==0 then null else $$maxdiff end))
                         ))
                     else . end
                   ) else . end))
@@ -430,7 +430,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.37
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.38
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
