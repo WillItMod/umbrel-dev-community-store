@@ -63,7 +63,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.22"
+APP_VERSION = "0.8.23"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1206,13 +1206,13 @@ def _update_pool_settings(
     if not addr:
         raise ValueError("payoutAddress is required")
 
-    # Miningcore's Bitcoin-family address parser for DigiByte currently expects a legacy/base58 address
-    # (typically starting with D/S on mainnet). A bech32 payout address (dgb1...) will crash Miningcore
-    # at pool startup, taking the UI and stratum down.
-    if addr.lower().startswith("dgb1"):
-        raise ValueError("payoutAddress must be a legacy/base58 DigiByte address (starts with D or S), not dgb1")
-    if not re.match(r"^[DS][1-9A-HJ-NP-Za-km-z]{25,40}$", addr):
-        raise ValueError("payoutAddress must be a legacy/base58 DigiByte address (starts with D or S)")
+    # Accept Base58 (D/S...) and Bech32 (dgb1...) payout addresses.
+    # We rely on DigiByte Core's RPC validation when available.
+    #
+    # Note: Unlike BCH CashAddr, DigiByte Bech32 is not just a different "encoding" of the same
+    # destination as legacy Base58; it can represent different script types (SegWit). So we do not
+    # attempt any conversion here.
+    prefix_ok = bool(re.match(r"^(?i:(dgb1|[ds]))", addr))
 
     validated = None
     validation_warning = None
@@ -1228,6 +1228,11 @@ def _update_pool_settings(
         validated = bool(res.get("isvalid")) if isinstance(res, dict) else False
         if not validated:
             raise ValueError("payoutAddress is not a valid DigiByte address")
+        # If RPC says it's valid, accept it even if the prefix looks unfamiliar.
+        prefix_ok = True
+
+    if not prefix_ok:
+        raise ValueError("payoutAddress must look like a DigiByte address (D/S... or dgb1...)")
 
     conf = _read_miningcore_conf()
     pools = conf.get("pools")
