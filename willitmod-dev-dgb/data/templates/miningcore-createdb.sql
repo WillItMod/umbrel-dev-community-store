@@ -6,6 +6,7 @@ CREATE TABLE shares
 	poolid TEXT NOT NULL,
 	blockheight BIGINT NOT NULL,
 	difficulty DOUBLE PRECISION NOT NULL,
+	actualdifficulty DOUBLE PRECISION,
 	networkdifficulty DOUBLE PRECISION NOT NULL,
 	miner TEXT NOT NULL,
 	worker TEXT,
@@ -120,4 +121,3 @@ CREATE TABLE minerstats
 
 CREATE INDEX IX_minerstats_poolid_created ON minerstats(poolid, created);
 CREATE INDEX IX_minerstats_poolid_miner_created ON minerstats(poolid, miner, created);
-

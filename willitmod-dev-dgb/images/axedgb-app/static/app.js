@@ -270,18 +270,22 @@ async function postJson(url, body) {
 function showTab(tab) {
   const home = document.getElementById('view-home');
   const pool = document.getElementById('view-pool');
+  const blocks = document.getElementById('view-blocks');
   const settings = document.getElementById('view-settings');
   const tHome = document.getElementById('tab-home');
   const tPool = document.getElementById('tab-pool');
+  const tBlocks = document.getElementById('tab-blocks');
   const tSet = document.getElementById('tab-settings');
 
   const which = tab || 'home';
   home.classList.toggle('hidden', which !== 'home');
   pool.classList.toggle('hidden', which !== 'pool');
+  blocks.classList.toggle('hidden', which !== 'blocks');
   settings.classList.toggle('hidden', which !== 'settings');
 
   tHome.classList.toggle('axe-tab--active', which === 'home');
   tPool.classList.toggle('axe-tab--active', which === 'pool');
+  tBlocks.classList.toggle('axe-tab--active', which === 'blocks');
   tSet.classList.toggle('axe-tab--active', which === 'settings');
 
   window.__activeTab = which;
@@ -403,6 +407,89 @@ async function refreshWorkerDetails(algo) {
   }
 }
 
+function blockExplorerUrl(height) {
+  const h = Number(height);
+  if (!Number.isFinite(h) || h <= 0) return null;
+  return `https://chainz.cryptoid.info/dgb/block.dws?${Math.floor(h)}.htm`;
+}
+
+function formatBlockStatus(v) {
+  const n = Number(v);
+  // Miningcore: 0=pending, 1=confirmed, 2=orphaned
+  if (n === 1) return 'confirmed';
+  if (n === 2) return 'orphaned';
+  if (n === 0) return 'pending';
+  return String(v ?? '-');
+}
+
+function renderBlocksView(payload) {
+  const status = document.getElementById('blocks-status');
+  const rows = document.getElementById('blocks-rows');
+  if (!rows) return;
+
+  const algo = payload && payload.algo ? String(payload.algo) : getAlgo();
+  const list = (payload && payload.blocks) || [];
+
+  rows.innerHTML = '';
+
+  if (!Array.isArray(list) || list.length === 0) {
+    if (status) status.textContent = 'No blocks found yet.';
+    rows.innerHTML = '<div class="px-3 py-3 text-sm text-slate-400">No blocks found yet.</div>';
+    return;
+  }
+
+  if (status) status.textContent = `${list.length} shown (${algo === 'scrypt' ? 'Scrypt' : 'SHA256d'})`;
+
+  for (const b of list) {
+    const created = b && (b.created || b.Created);
+    const height = b && (b.blockHeight || b.BlockHeight);
+    const st = b && (b.status ?? b.Status);
+    const miner = b && (b.miner || b.Miner);
+    const worker = b && (b.worker || b.Worker);
+    const hash = b && (b.hash || b.Hash);
+
+    const minerLabel = worker ? `${shortenMiner(miner)}.${escapeHtml(String(worker))}` : shortenMiner(miner);
+    const timeLabel = created ? formatAge(created) : '-';
+
+    const url = blockExplorerUrl(height);
+    const heightHtml = url
+      ? `<a class="font-mono text-slate-100 underline decoration-white/20 hover:decoration-white/50" target="_blank" rel="noreferrer" href="${url}">${escapeHtml(
+          String(height ?? '-')
+        )}</a>`
+      : `<span class="font-mono text-slate-100">${escapeHtml(String(height ?? '-'))}</span>`;
+
+    const hashShort = hash ? `${String(hash).slice(0, 10)}…${String(hash).slice(-8)}` : '-';
+
+    rows.insertAdjacentHTML(
+      'beforeend',
+      `
+      <div class="grid grid-cols-12 gap-2 px-3 py-2 text-sm">
+        <div class="col-span-3 text-slate-300">${escapeHtml(timeLabel)}</div>
+        <div class="col-span-2">${heightHtml}</div>
+        <div class="col-span-2 text-slate-300">${escapeHtml(formatBlockStatus(st))}</div>
+        <div class="col-span-5 min-w-0">
+          <div class="truncate font-mono text-slate-100">${minerLabel}</div>
+          <div class="mt-0.5 truncate font-mono text-xs text-slate-400">${escapeHtml(hashShort)}</div>
+        </div>
+      </div>
+      `
+    );
+  }
+}
+
+async function refreshBlocks() {
+  const status = document.getElementById('blocks-status');
+  try {
+    if (status) status.textContent = 'Loading...';
+    const algo = getAlgo();
+    const data = await fetchJson(`/api/blocks?algo=${encodeURIComponent(algo)}&page=0&pageSize=25`);
+    renderBlocksView(data);
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message || e}`;
+    renderBlocksView({ blocks: [] });
+  }
+}
+
 function getAlgo() {
   const el = document.getElementById('algo');
   const saved = localStorage.getItem('dgbAlgo');
@@ -509,6 +596,20 @@ async function refresh() {
       diffSub.textContent = `${algo === 'scrypt' ? 'Scrypt' : 'SHA256d'}${height}`;
     }
 
+    const bestSinceEl = document.getElementById('best-share-since');
+    const bestAllEl = document.getElementById('best-share-all');
+    if (bestSinceEl) {
+      const v =
+        (pool && (pool.best_share_since_block ?? pool.best_difficulty_since_block)) != null
+          ? pool.best_share_since_block ?? pool.best_difficulty_since_block
+          : null;
+      bestSinceEl.textContent = v == null ? '-' : formatCompactNumber(v);
+    }
+    if (bestAllEl) {
+      const v = (pool && (pool.best_share_all ?? pool.best_difficulty_all)) != null ? pool.best_share_all ?? pool.best_difficulty_all : null;
+      bestAllEl.textContent = v == null ? '-' : formatCompactNumber(v);
+    }
+
     const banner = document.getElementById('block-found-banner');
     const totalBlocks = Number(pool && pool.total_blocks);
     if (banner && Number.isFinite(totalBlocks) && totalBlocks >= 0) {
@@ -568,6 +669,10 @@ async function refresh() {
     const diffSub = document.getElementById('difficulty-sub');
     if (diffEl) diffEl.textContent = '-';
     if (diffSub) diffSub.textContent = '-';
+    const bestSinceEl = document.getElementById('best-share-since');
+    const bestAllEl = document.getElementById('best-share-all');
+    if (bestSinceEl) bestSinceEl.textContent = '-';
+    if (bestAllEl) bestAllEl.textContent = '-';
 
     const banner = document.getElementById('block-found-banner');
     if (banner) banner.classList.add('hidden');
@@ -782,12 +887,25 @@ function startChartInterval() {
   }, 30000);
 }
 
+let blocksInterval = null;
+function startBlocksInterval() {
+  if (blocksInterval) return;
+  blocksInterval = setInterval(() => {
+    if (window.__activeTab === 'blocks') refreshBlocks();
+  }, 30000);
+}
+
 document.getElementById('tab-home').addEventListener('click', () => showTab('home'));
 document.getElementById('tab-pool').addEventListener('click', async () => {
   showTab('pool');
   startChartInterval();
   await refreshCharts();
   await refresh();
+});
+document.getElementById('tab-blocks').addEventListener('click', async () => {
+  showTab('blocks');
+  startBlocksInterval();
+  await refreshBlocks();
 });
 document.getElementById('go-pool').addEventListener('click', async () => {
   showTab('pool');

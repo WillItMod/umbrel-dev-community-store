@@ -280,7 +280,7 @@ services:
             {
               printf '%s\n' 'SET statement_timeout = 0;'
               printf '\n'
-              printf '%s\n' 'CREATE TABLE shares (id BIGSERIAL PRIMARY KEY NOT NULL, poolid TEXT NOT NULL, blockheight BIGINT NOT NULL, difficulty DOUBLE PRECISION NOT NULL, networkdifficulty DOUBLE PRECISION NOT NULL, miner TEXT NOT NULL, worker TEXT, useragent TEXT, ipaddress TEXT, source TEXT, created TIMESTAMP NOT NULL);'
+              printf '%s\n' 'CREATE TABLE shares (id BIGSERIAL PRIMARY KEY NOT NULL, poolid TEXT NOT NULL, blockheight BIGINT NOT NULL, difficulty DOUBLE PRECISION NOT NULL, actualdifficulty DOUBLE PRECISION, networkdifficulty DOUBLE PRECISION NOT NULL, miner TEXT NOT NULL, worker TEXT, useragent TEXT, ipaddress TEXT, source TEXT, created TIMESTAMP NOT NULL);'
               printf '%s\n' 'CREATE INDEX IX_shares_poolid_created ON shares(poolid, created);'
               printf '%s\n' 'CREATE INDEX IX_shares_poolid_miner_created ON shares(poolid, miner, created);'
               printf '%s\n' 'CREATE INDEX IX_shares_poolid_miner_worker_created ON shares(poolid, miner, worker, created);'
@@ -314,6 +314,12 @@ services:
             } > /data/templates/miningcore-createdb.sql
           fi
           psql -v ON_ERROR_STOP=1 -h "$$DB_HOST" -p 5432 -U "$$DB_USER" -d "$$DB_NAME" < /data/templates/miningcore-createdb.sql >/dev/null
+        fi
+
+        # Add new columns when upgrading (safe to re-run).
+        if ! psql -h "$$DB_HOST" -p 5432 -U "$$DB_USER" -d "$$DB_NAME" -tA -c "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='shares' AND column_name='actualdifficulty';" 2>/dev/null | grep -q '^1$'; then
+          echo "[axedgb] Migrating DB: adding shares.actualdifficulty"
+          psql -v ON_ERROR_STOP=1 -h "$$DB_HOST" -p 5432 -U "$$DB_USER" -d "$$DB_NAME" -c "ALTER TABLE shares ADD COLUMN actualdifficulty DOUBLE PRECISION;" >/dev/null
         fi
 
         # Seed an initial poolstats row so Miningcore's API does not error before the first stats tick.
@@ -361,7 +367,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/postgres:/var/lib/postgresql/data
 
   miningcore:
-    image: ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r20
+    image: ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r21
     restart: unless-stopped
     depends_on:
       - postgres
@@ -376,7 +382,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.25
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.26
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s
@@ -400,6 +406,6 @@ services:
       MININGCORE_CONF_PATH: "/data/pool/config/miningcore.json"
       APP_CHANNEL: "ALPHA"
       DGB_IMAGE: "ghcr.io/willitmod/digibyte:8.22.2"
-      MININGCORE_IMAGE: "ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r20"
+      MININGCORE_IMAGE: "ghcr.io/willitmod/axedgb-miningcore:axedgb-0.8.10-r21"
       POSTGRES_IMAGE: "postgres:16-alpine"
       STATIC_DIR: "/app/static"

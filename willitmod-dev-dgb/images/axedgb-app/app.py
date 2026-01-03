@@ -65,7 +65,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.25"
+APP_VERSION = "0.8.26"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1477,6 +1477,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "best_difficulty_all": best.get("best_difficulty_all"),
             "best_difficulty_since_block": best.get("best_difficulty_since_block"),
             "best_difficulty_since_block_at": best.get("best_difficulty_since_block_at"),
+            "best_share_all": best.get("best_share_all") or best.get("best_difficulty_all"),
+            "best_share_since_block": best.get("best_share_since_block") or best.get("best_difficulty_since_block"),
+            "best_share_since_block_at": best.get("best_share_since_block_at") or best.get("best_difficulty_since_block_at"),
             "shares_10m": share_health.get("shares_10m"),
             "shares_1h": share_health.get("shares_1h"),
             "last_share_at": share_health.get("last_share_at"),
@@ -1524,6 +1527,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             status.setdefault("best_difficulty_all", None)
             status.setdefault("best_difficulty_since_block", None)
             status.setdefault("best_difficulty_since_block_at", None)
+            status.setdefault("best_share_all", status.get("best_difficulty_all"))
+            status.setdefault("best_share_since_block", status.get("best_difficulty_since_block"))
+            status.setdefault("best_share_since_block_at", status.get("best_difficulty_since_block_at"))
             status.setdefault("shares_10m", None)
             status.setdefault("shares_1h", None)
             status.setdefault("last_share_at", None)
@@ -1545,6 +1551,9 @@ def _pool_status(pool_id: str, *, algo: str | None = None):
             "best_difficulty_all": None,
             "best_difficulty_since_block": None,
             "best_difficulty_since_block_at": None,
+            "best_share_all": None,
+            "best_share_since_block": None,
+            "best_share_since_block_at": None,
             "shares_10m": None,
             "shares_1h": None,
             "last_share_at": None,
@@ -2128,7 +2137,10 @@ def _pool_best_difficulties(pool_id: str) -> dict:
         )
         try:
             cur = conn.cursor()
-            cur.execute("SELECT MAX(difficulty) FROM shares WHERE poolid=%s", (pool_id,))
+            try:
+                cur.execute("SELECT MAX(COALESCE(actualdifficulty, difficulty)) FROM shares WHERE poolid=%s", (pool_id,))
+            except Exception:
+                cur.execute("SELECT MAX(difficulty) FROM shares WHERE poolid=%s", (pool_id,))
             row = cur.fetchone()
             best_all = float(row[0]) if row and row[0] is not None else None
 
@@ -2137,10 +2149,16 @@ def _pool_best_difficulties(pool_id: str) -> dict:
             last_block_created = row[0] if row and row[0] is not None else None
 
             if last_block_created is not None:
-                cur.execute(
-                    "SELECT MAX(difficulty) FROM shares WHERE poolid=%s AND created >= %s",
-                    (pool_id, last_block_created),
-                )
+                try:
+                    cur.execute(
+                        "SELECT MAX(COALESCE(actualdifficulty, difficulty)) FROM shares WHERE poolid=%s AND created >= %s",
+                        (pool_id, last_block_created),
+                    )
+                except Exception:
+                    cur.execute(
+                        "SELECT MAX(difficulty) FROM shares WHERE poolid=%s AND created >= %s",
+                        (pool_id, last_block_created),
+                    )
                 row = cur.fetchone()
                 best_since = float(row[0]) if row and row[0] is not None else None
             else:
@@ -2155,6 +2173,9 @@ def _pool_best_difficulties(pool_id: str) -> dict:
             "best_difficulty_all": None,
             "best_difficulty_since_block": None,
             "best_difficulty_since_block_at": None,
+            "best_share_all": None,
+            "best_share_since_block": None,
+            "best_share_since_block_at": None,
         }
         with BEST_DIFFICULTY_CACHE_LOCK:
             BEST_DIFFICULTY_CACHE[pool_id] = {"t": now, "data": out}
@@ -2164,6 +2185,10 @@ def _pool_best_difficulties(pool_id: str) -> dict:
         "best_difficulty_all": best_all,
         "best_difficulty_since_block": best_since,
         "best_difficulty_since_block_at": _iso_z(last_block_created) if isinstance(last_block_created, datetime) else None,
+        # More user-friendly naming (same values).
+        "best_share_all": best_all,
+        "best_share_since_block": best_since,
+        "best_share_since_block_at": _iso_z(last_block_created) if isinstance(last_block_created, datetime) else None,
     }
 
     with BEST_DIFFICULTY_CACHE_LOCK:
@@ -2323,13 +2348,13 @@ def _widget_sync():
 def _widget_pool():
     pool_id = _pool_id_for_algo("sha256")
     p = _pool_status(pool_id, algo="sha256")
-    best = p.get("best_difficulty_since_block") or p.get("best_difficulty_all")
+    best = p.get("best_share_since_block") or p.get("best_share_all") or p.get("best_difficulty_since_block") or p.get("best_difficulty_all")
     return {
         "type": "three-stats",
         "items": [
             {"title": "Hashrate", "text": str(p.get("hashrate_ths") or "-"), "subtext": "TH/s"},
             {"title": "Workers", "text": str(p.get("workers") or 0)},
-            {"title": "Best diff", "text": str(best or "-"), "subtext": ""},
+            {"title": "Best share", "text": str(best or "-"), "subtext": ""},
         ],
     }
 
@@ -2470,6 +2495,47 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(*_json({"poolId": pool_id, "algo": algo, "miners": miners}))
             except Exception as e:
                 return self._send(*_json({"poolId": pool_id, "algo": algo, "miners": [], "error": str(e)}, status=503))
+
+        if path == "/api/blocks":
+            try:
+                query = ""
+                if "?" in raw_path:
+                    _, query = raw_path.split("?", 1)
+                algo = None
+                page = 0
+                page_size = 25
+                for part in query.split("&"):
+                    if part.startswith("algo="):
+                        algo = part.split("=", 1)[1].strip().lower() or None
+                    if part.startswith("page="):
+                        try:
+                            page = int(part.split("=", 1)[1])
+                        except Exception:
+                            page = 0
+                    if part.startswith("pageSize="):
+                        try:
+                            page_size = int(part.split("=", 1)[1])
+                        except Exception:
+                            page_size = 25
+                page = max(0, page)
+                page_size = max(1, min(100, page_size))
+
+                pool_id = _pool_id_for_algo(algo)
+                with POOL_LAST_REQUEST_LOCK:
+                    POOL_LAST_REQUEST_S[pool_id] = time.time()
+
+                data = _miningcore_get_any(f"/api/pools/{pool_id}/blocks?page={page}&pageSize={page_size}", timeout_s=6)
+                blocks = []
+                if isinstance(data, list):
+                    blocks = data
+                elif isinstance(data, dict):
+                    maybe = data.get("blocks") or data.get("Blocks")
+                    if isinstance(maybe, list):
+                        blocks = maybe
+
+                return self._send(*_json({"poolId": pool_id, "algo": algo, "page": page, "pageSize": page_size, "blocks": blocks}))
+            except Exception as e:
+                return self._send(*_json({"error": str(e)}, status=503))
 
         if path.startswith("/api/timeseries/pool"):
             try:

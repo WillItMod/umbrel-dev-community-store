@@ -33,6 +33,12 @@ jobs:
           cd _vendor/miningcore
           git checkout -b axedgb-pinned
 
+      - name: Apply AxeDGB Miningcore patches
+        run: |
+          set -eux
+          cd _vendor/miningcore
+          git apply ../../willitmod-dev-dgb/images/miningcore/patches/axedgb-best-share.patch
+
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
