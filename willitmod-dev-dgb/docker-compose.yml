@@ -193,7 +193,38 @@ services:
                    },
                    "daemons": $$daemons
                  }]
-                 ' /data/pool/config/miningcore.json > "$$tmp2" && mv "$$tmp2" /data/pool/config/miningcore.json
+                  ' /data/pool/config/miningcore.json > "$$tmp2" && mv "$$tmp2" /data/pool/config/miningcore.json
+            fi
+
+            # Apply the UI-owned pool settings state (payout + vardiff) on every boot.
+            # This avoids the UI container needing write access to miningcore.json.
+            if [ -f /data/ui/state/pool_settings.json ]; then
+              desired_addr="$$(jq -r '.payoutAddress // empty' /data/ui/state/pool_settings.json 2>/dev/null | head -n 1 | tr -d '\r' || true)"
+              desired_mindiff="$$(jq -r '(.mindiff // 1024) | tonumber' /data/ui/state/pool_settings.json 2>/dev/null | head -n 1 | tr -d '\r' || echo 1024)"
+              desired_startdiff="$$(jq -r '(.startdiff // 1024) | tonumber' /data/ui/state/pool_settings.json 2>/dev/null | head -n 1 | tr -d '\r' || echo 1024)"
+              desired_maxdiff="$$(jq -r '(.maxdiff // 0) | tonumber' /data/ui/state/pool_settings.json 2>/dev/null | head -n 1 | tr -d '\r' || echo 0)"
+
+              if [ -n "$$desired_addr" ]; then
+                tmp_apply="/data/pool/config/miningcore.json.tmp_apply"
+                jq --arg addr "$$desired_addr" \
+                  --argjson mindiff "$$desired_mindiff" \
+                  --argjson startdiff "$$desired_startdiff" \
+                  --argjson maxdiff "$$desired_maxdiff" '
+                  (.pools |= (if type=="array" then map(
+                    if type=="object" and (.id=="dgb-sha256-1" or .id=="dgb-scrypt-1") then
+                      (.address=$addr)
+                      | (.ports |= (if type=="object" then with_entries(
+                          .value |= (if type=="object" then
+                            (.difficulty=$startdiff)
+                            | (.varDiff = (.varDiff // {}))
+                            | (.varDiff.minDiff=$mindiff)
+                            | (.varDiff.maxDiff=(if ($maxdiff|tonumber)==0 then null else ($maxdiff|tonumber) end))
+                          else . end)
+                        ) else . end))
+                    else . end
+                  ) else . end))
+                  ' /data/pool/config/miningcore.json > "$$tmp_apply" && mv "$$tmp_apply" /data/pool/config/miningcore.json
+              fi
             fi
 
             # Safety:
@@ -390,7 +421,7 @@ services:
       - ${APP_DATA_DIR}/data/pool/config/coins.json:/app/coins.json:ro
 
   app:
-    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.35
+    image: ghcr.io/willitmod/axedgb-app-umbrel-dev:0.8.36
     user: "1000:1000"
     restart: on-failure
     stop_grace_period: 30s

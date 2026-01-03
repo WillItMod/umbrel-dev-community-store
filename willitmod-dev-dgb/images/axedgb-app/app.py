@@ -67,7 +67,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.35"
+APP_VERSION = "0.8.36"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -1148,7 +1148,7 @@ def _read_pool_settings_state() -> dict:
 def _write_pool_settings_state(obj: dict):
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        POOL_SETTINGS_STATE_PATH.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _atomic_write_text(POOL_SETTINGS_STATE_PATH, json.dumps(obj, indent=2, sort_keys=True) + "\n")
     except Exception:
         pass
 
@@ -1216,12 +1216,30 @@ def _pool_settings():
         conf_addr = ""
 
     state = _read_pool_settings_state()
+    desired_addr = str(state.get("payoutAddress") or "").strip()
+    desired_mindiff = _maybe_int(state.get("mindiff"))
+    desired_startdiff = _maybe_int(state.get("startdiff"))
+    desired_maxdiff = _maybe_int(state.get("maxdiff"))
     validated = state.get("validated")
     validation_warning = state.get("validationWarning")
 
-    payout_address = conf_addr
-    configured = bool(payout_address) and payout_address != POOL_PLACEHOLDER_PAYOUT_ADDRESS
-    if not configured:
+    actual_addr = conf_addr
+    actual_configured = bool(actual_addr) and actual_addr != POOL_PLACEHOLDER_PAYOUT_ADDRESS
+
+    # If the user saved a new payout address but hasn't restarted yet, surface the
+    # saved value in the UI while still indicating the pool isn't configured
+    # until Miningcore is updated (via init on restart).
+    payout_address = desired_addr or actual_addr
+    pending_apply = bool(desired_addr) and desired_addr != actual_addr
+    configured = bool(payout_address) and payout_address != POOL_PLACEHOLDER_PAYOUT_ADDRESS and actual_configured and not pending_apply
+
+    if pending_apply:
+        validation_warning = (
+            "Saved. Restart the app to apply the new payout address and varDiff settings."
+            + (f" {validation_warning}" if isinstance(validation_warning, str) and validation_warning.strip() else "")
+        )
+
+    if not configured and not pending_apply:
         payout_address = ""
         validated = None
         validation_warning = None
@@ -1236,12 +1254,12 @@ def _pool_settings():
         "configured": configured,
         "validated": validated,
         "validationWarning": validation_warning,
-        "mindiff": _to_int(mindiff, 1024),
-        "startdiff": _to_int(startdiff, 1024),
-        "maxdiff": _to_int(maxdiff, 0),
+        "mindiff": _to_int(desired_mindiff if desired_mindiff is not None else mindiff, 1024),
+        "startdiff": _to_int(desired_startdiff if desired_startdiff is not None else startdiff, 1024),
+        "maxdiff": _to_int(desired_maxdiff if desired_maxdiff is not None else maxdiff, 0),
         "warning": (
             "Set a payout address before mining, then restart the app. Miningcore uses this address when generating blocks."
-            if not configured
+            if not configured and not pending_apply
             else None
         ),
     }
@@ -1273,113 +1291,29 @@ def _update_pool_settings(
     if addr.lower().startswith("dgb1"):
         raise ValueError("payoutAddress must be a legacy/base58 DigiByte address (not dgb1)")
 
-    conf = _read_miningcore_conf()
-    pools = conf.get("pools")
-    if not isinstance(pools, list):
-        pools = []
-        conf["pools"] = pools
-
     md = _maybe_int(mindiff)
     sd = _maybe_int(startdiff)
     xd = _maybe_int(maxdiff)
 
-    algo_to_pool_id = _pool_ids()
-    algo_to_coin = {
-        "sha256": "digibyte-sha256",
-        "scrypt": "digibyte-scrypt",
-    }
-    algo_to_port = {
-        "sha256": "3333",
-        "scrypt": "3334",
-    }
-    try:
-        def upsert(pool_id: str, *, coin: str | None, port: str):
-            pool_conf = None
-            for item in pools:
-                if isinstance(item, dict) and str(item.get("id") or "") == pool_id:
-                    pool_conf = item
-                    break
-            if pool_conf is None:
-                pool_conf = {"id": pool_id, "enabled": True}
-                if coin:
-                    pool_conf["coin"] = coin
-                pools.append(pool_conf)
-            else:
-                if coin:
-                    pool_conf.setdefault("coin", coin)
+    use_md = md if md is not None else 1024
+    use_sd = sd if sd is not None else max(1024, use_md)
+    use_xd = xd if xd is not None else 0
 
-            pool_conf["address"] = addr
+    if use_md < 1:
+        raise ValueError("mindiff must be >= 1")
+    if use_sd < use_md:
+        raise ValueError("startdiff must be >= mindiff")
+    if use_xd != 0 and use_xd < use_sd:
+        raise ValueError("maxdiff must be 0 (no limit) or >= startdiff")
 
-            ports = pool_conf.get("ports") or {}
-            if not isinstance(ports, dict):
-                ports = {}
-                pool_conf["ports"] = ports
-            endpoint = ports.get(port)
-            if not isinstance(endpoint, dict):
-                endpoint = {"listenAddress": "0.0.0.0"}
-                ports[port] = endpoint
-            else:
-                endpoint["listenAddress"] = "0.0.0.0"
-
-            vardiff = endpoint.get("varDiff") or {}
-            if not isinstance(vardiff, dict):
-                vardiff = {}
-            endpoint["varDiff"] = vardiff
-
-            md_existing = _maybe_int(vardiff.get("minDiff")) or 1024
-            sd_existing = _maybe_int(endpoint.get("difficulty")) or 1024
-            xd_existing = _maybe_int(vardiff.get("maxDiff")) or 0
-
-            use_md = md if md is not None else md_existing
-            use_sd = sd if sd is not None else sd_existing
-            use_xd = xd if xd is not None else xd_existing
-
-            if use_md < 1:
-                raise ValueError("mindiff must be >= 1")
-            if use_sd < use_md:
-                raise ValueError("startdiff must be >= mindiff")
-            if use_xd != 0 and use_xd < use_sd:
-                raise ValueError("maxdiff must be 0 (no limit) or >= startdiff")
-
-            endpoint["difficulty"] = int(use_sd)
-            vardiff["minDiff"] = int(use_md)
-            vardiff["maxDiff"] = None if int(use_xd) == 0 else int(use_xd)
-
-        for algo, pool_id in algo_to_pool_id.items():
-            coin = algo_to_coin.get(algo)
-            port = algo_to_port.get(algo, "3333")
-            upsert(pool_id, coin=coin, port=port)
-
-    except (TypeError, ValueError):
-        raise
-    except Exception:
-        # Fall back to safe defaults.
-        for algo, pool_id in algo_to_pool_id.items():
-            port = algo_to_port.get(algo, "3333")
-            found = None
-            for item in pools:
-                if isinstance(item, dict) and str(item.get("id") or "") == pool_id:
-                    found = item
-                    break
-            if found is None:
-                found = {"id": pool_id, "enabled": True}
-                coin = algo_to_coin.get(algo)
-                if coin:
-                    found["coin"] = coin
-                pools.append(found)
-            found["address"] = addr
-            found.setdefault("ports", {port: {"listenAddress": "0.0.0.0"}})
-            endpoint = found["ports"].get(port) if isinstance(found.get("ports"), dict) else None
-            if isinstance(endpoint, dict):
-                endpoint.setdefault("difficulty", 1024)
-                endpoint.setdefault("varDiff", {})
-                if isinstance(endpoint["varDiff"], dict):
-                    endpoint["varDiff"].setdefault("minDiff", 1024)
-                    endpoint["varDiff"].setdefault("maxDiff", None)
-
-    _write_miningcore_conf(conf)
+    # Do not write miningcore.json from the UI container; persist desired settings in
+    # a UI-owned state file and let the init container (root) apply them on restart.
     _write_pool_settings_state(
         {
+            "payoutAddress": addr,
+            "mindiff": int(use_md),
+            "startdiff": int(use_sd),
+            "maxdiff": int(use_xd),
             "validated": bool(validated) if validated is not None else None,
             "validationWarning": validation_warning,
             "updatedAt": int(time.time()),
