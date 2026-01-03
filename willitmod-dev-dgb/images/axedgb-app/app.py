@@ -65,7 +65,7 @@ SUPPORT_CHECKIN_URL = _env_or_default("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_
 SUPPORT_TICKET_URL = _env_or_default("SUPPORT_TICKET_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/support/upload")
 
 APP_ID = "willitmod-dev-dgb"
-APP_VERSION = "0.8.26"
+APP_VERSION = "0.8.27"
 
 DGB_RPC_HOST = os.getenv("DGB_RPC_HOST", "dgbd")
 DGB_RPC_PORT = int(os.getenv("DGB_RPC_PORT", "14022"))
@@ -2122,8 +2122,10 @@ def _pool_best_difficulties(pool_id: str) -> dict:
     if not cfg:
         return {}
 
-    best_all = None
-    best_since = None
+    best_diff_all = None
+    best_diff_since = None
+    best_share_all = None
+    best_share_since = None
     last_block_created = None
 
     try:
@@ -2137,32 +2139,46 @@ def _pool_best_difficulties(pool_id: str) -> dict:
         )
         try:
             cur = conn.cursor()
-            try:
-                cur.execute("SELECT MAX(COALESCE(actualdifficulty, difficulty)) FROM shares WHERE poolid=%s", (pool_id,))
-            except Exception:
-                cur.execute("SELECT MAX(difficulty) FROM shares WHERE poolid=%s", (pool_id,))
+            cur.execute("SELECT MAX(difficulty) FROM shares WHERE poolid=%s", (pool_id,))
             row = cur.fetchone()
-            best_all = float(row[0]) if row and row[0] is not None else None
+            best_diff_all = float(row[0]) if row and row[0] is not None else None
+
+            try:
+                cur.execute("SELECT MAX(actualdifficulty) FROM shares WHERE poolid=%s", (pool_id,))
+                row = cur.fetchone()
+                best_share_all = float(row[0]) if row and row[0] is not None else None
+            except Exception:
+                best_share_all = None
 
             cur.execute("SELECT MAX(created) FROM blocks WHERE poolid=%s", (pool_id,))
             row = cur.fetchone()
             last_block_created = row[0] if row and row[0] is not None else None
 
             if last_block_created is not None:
+                cur.execute(
+                    "SELECT MAX(difficulty) FROM shares WHERE poolid=%s AND created >= %s",
+                    (pool_id, last_block_created),
+                )
+                row = cur.fetchone()
+                best_diff_since = float(row[0]) if row and row[0] is not None else None
+
                 try:
                     cur.execute(
-                        "SELECT MAX(COALESCE(actualdifficulty, difficulty)) FROM shares WHERE poolid=%s AND created >= %s",
+                        "SELECT MAX(actualdifficulty) FROM shares WHERE poolid=%s AND created >= %s",
                         (pool_id, last_block_created),
                     )
+                    row = cur.fetchone()
+                    best_share_since = float(row[0]) if row and row[0] is not None else None
                 except Exception:
-                    cur.execute(
-                        "SELECT MAX(difficulty) FROM shares WHERE poolid=%s AND created >= %s",
-                        (pool_id, last_block_created),
-                    )
-                row = cur.fetchone()
-                best_since = float(row[0]) if row and row[0] is not None else None
+                    best_share_since = None
             else:
-                best_since = best_all
+                best_diff_since = best_diff_all
+                best_share_since = best_share_all
+
+            if best_share_all is None:
+                best_share_all = best_diff_all
+            if best_share_since is None:
+                best_share_since = best_diff_since
         finally:
             try:
                 conn.close()
@@ -2182,12 +2198,11 @@ def _pool_best_difficulties(pool_id: str) -> dict:
         return dict(out)
 
     out = {
-        "best_difficulty_all": best_all,
-        "best_difficulty_since_block": best_since,
+        "best_difficulty_all": best_diff_all,
+        "best_difficulty_since_block": best_diff_since,
         "best_difficulty_since_block_at": _iso_z(last_block_created) if isinstance(last_block_created, datetime) else None,
-        # More user-friendly naming (same values).
-        "best_share_all": best_all,
-        "best_share_since_block": best_since,
+        "best_share_all": best_share_all,
+        "best_share_since_block": best_share_since,
         "best_share_since_block_at": _iso_z(last_block_created) if isinstance(last_block_created, datetime) else None,
     }
 
