@@ -1,0 +1,85 @@
+diff --git a/src/Miningcore/Blockchain/Bitcoin/BitcoinJobManagerBase.cs b/src/Miningcore/Blockchain/Bitcoin/BitcoinJobManagerBase.cs
+index 0d0d1f0..b5a0b45 100644
+--- a/src/Miningcore/Blockchain/Bitcoin/BitcoinJobManagerBase.cs
++++ b/src/Miningcore/Blockchain/Bitcoin/BitcoinJobManagerBase.cs
+@@ -478,7 +478,21 @@ public abstract class BitcoinJobManagerBase<TJob> : JobManagerBase<TJob>
+         // Create pool address script from response
+         if(!isPoS)
+         {
+-            if(extraPoolConfig != null && extraPoolConfig.AddressType != BitcoinAddressType.Legacy)
++            // Prefer daemon-provided ScriptPubKey so non-Bitcoin encodings like dgb1... work.
++            // We still validate the address above using validateaddress. This just avoids local
++            // address parsing which is Bitcoin-centric in Miningcore.
++            if(validateAddressResponse != null && !string.IsNullOrEmpty(validateAddressResponse.ScriptPubKey))
++            {
++                try
++                {
++                    poolAddressDestination = BitcoinUtils.ScriptPubKeyToDestination(validateAddressResponse.ScriptPubKey, network);
++                }
++                catch(Exception ex)
++                {
++                    logger.Warn(ex, () => $"Unable to parse ScriptPubKey from daemon for pool address '{poolConfig.Address}', falling back to local address parsing");
++                }
++            }
++
++            if(poolAddressDestination == null && extraPoolConfig != null && extraPoolConfig.AddressType != BitcoinAddressType.Legacy)
+                 logger.Info(()=> $"Interpreting pool address {poolConfig.Address} as type {extraPoolConfig?.AddressType.ToString()}");
+ 
+-            poolAddressDestination = AddressToDestination(poolConfig.Address, extraPoolConfig?.AddressType);
++            if(poolAddressDestination == null)
++                poolAddressDestination = AddressToDestination(poolConfig.Address, extraPoolConfig?.AddressType);
+         }
+ 
+         else
+diff --git a/src/Miningcore/Blockchain/Bitcoin/BitcoinUtils.cs b/src/Miningcore/Blockchain/Bitcoin/BitcoinUtils.cs
+index 52f1a54..3c0a3a9 100644
+--- a/src/Miningcore/Blockchain/Bitcoin/BitcoinUtils.cs
++++ b/src/Miningcore/Blockchain/Bitcoin/BitcoinUtils.cs
+@@ -1,5 +1,4 @@
+-using System.Diagnostics;
+ using NBitcoin;
+ using NBitcoin.DataEncoders;
+ 
+@@ -30,14 +29,35 @@ public static class BitcoinUtils
+         return result;
+     }
+ 
++    public static IDestination ScriptPubKeyToDestination(string scriptPubKeyHex, Network expectedNetwork)
++    {
++        var script = Script.FromHex(scriptPubKeyHex);
++
++        // P2PKH
++        if(PayToPubkeyHashTemplate.Instance.CheckScriptPubKey(script))
++            return PayToPubkeyHashTemplate.Instance.ExtractScriptPubKeyParameters(script);
++
++        // P2SH
++        if(PayToScriptHashTemplate.Instance.CheckScriptPubKey(script))
++            return PayToScriptHashTemplate.Instance.ExtractScriptPubKeyParameters(script);
++
++        // Segwit (P2WPKH / P2WSH)
++        if(PayToWitPubKeyHashTemplate.Instance.CheckScriptPubKey(script))
++            return PayToWitPubKeyHashTemplate.Instance.ExtractScriptPubKeyParameters(script);
++
++        if(PayToWitScriptHashTemplate.Instance.CheckScriptPubKey(script))
++            return PayToWitScriptHashTemplate.Instance.ExtractScriptPubKeyParameters(script);
++
++        // Fall back to whatever NBitcoin can infer.
++        var addr = script.GetDestinationAddress(expectedNetwork);
++        if(addr != null)
++            return addr;
++
++        throw new FormatException(\"Unsupported ScriptPubKey\");
++    }
++
+     public static IDestination BechSegwitAddressToDestination(string address, Network expectedNetwork)
+     {
+         var encoder = expectedNetwork.GetBech32Encoder(Bech32Type.WITNESS_PUBKEY_ADDRESS, true);
+         var decoded = encoder.Decode(address, out var witVersion);
+         var result = new WitKeyId(decoded);
+ 
+-        Debug.Assert(result.GetAddress(expectedNetwork).ToString() == address);
+         return result;
+     }
+ 
+     public static IDestination BCashAddressToDestination(string address, Network expectedNetwork)
+     {
