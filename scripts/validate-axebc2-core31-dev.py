@@ -53,7 +53,8 @@ require(
     "DEV Compose content differs from the recipe accepted on 10.10.10.235",
 )
 
-require('version: "0.1.11-dev"' in manifest, "manifest must be 0.1.11-dev")
+# Package revision; the unchanged runtime evidence below remains 0.1.11-dev.
+require('version: "0.1.12-dev"' in manifest, "manifest must be 0.1.12-dev")
 require(evidence.get("app_version") == "0.1.11-dev", "evidence must name the 0.1.11 DEV app version")
 require(
     evidence.get("app_image")
@@ -78,7 +79,7 @@ require(
     and evidence.get("core_candidate_run") == 33675068951,
     "evidence must retain the accepted Core 31 tag, digest, source revision, and candidate run",
 )
-require("Requires 5tratumOS 0.7.12" in manifest, "OS prerequisite must be disclosed")
+require("on 5tratumOS, version 0.7.12 or newer is required" in manifest, "OS prerequisite must be disclosed")
 require(evidence.get("tested_os_version") == "v0.7.12-dev", "evidence must name the tested DEV OS release")
 require(
     evidence.get("tested_os_bundle_sha256")
