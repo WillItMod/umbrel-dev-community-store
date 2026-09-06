@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 import argparse
-from axebc2_release_state import validate as validate_release_state, validate_rendered_binds
+from axebc2_release_state import validate as validate_release_state, validate_rendered_binds, APP_TAG as CURRENT_APP_TAG, APP_DIGEST as CURRENT_APP_DIGEST
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,18 +42,24 @@ manifest = (APP / "umbrel-app.yml").read_text(encoding="utf-8")
 node_config = (APP / "data/templates/bitcoinII.conf.template").read_text(encoding="utf-8")
 evidence = json.loads((APP / "DEV-ACCEPTANCE-EVIDENCE.json").read_text(encoding="utf-8"))
 
-# Hash the exact finalized recipe in either lifecycle phase. In prefinalization
-# there is exactly one sentinel; in finalization this replacement is a no-op.
-finalized_compose_bytes = compose_bytes.replace(
-    b"APP_CANDIDATE_DIGEST_REQUIRED", APP_DIGEST.removeprefix("sha256:").encode()
+# Preserve the original Core 31 acceptance binding. This release changes only
+# the UI image and DEV stage; undo those two explicit changes for the baseline
+# check, so any unrelated runtime/configuration change is still rejected.
+finalized_compose = compose.replace(
+    "APP_CANDIDATE_DIGEST_REQUIRED", CURRENT_APP_DIGEST.removeprefix("sha256:")
 )
-computed_compose_sha256 = hashlib.sha256(finalized_compose_bytes).hexdigest()
+require('APP_CHANNEL: "BETA"' in finalized_compose, "DEV stage must be BETA")
+baseline_compose = finalized_compose.replace(
+    CURRENT_APP_TAG + "@" + CURRENT_APP_DIGEST,
+    "ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.11-candidate.ecf6e2c8cfd0@" + APP_DIGEST,
+).replace('APP_CHANNEL: "BETA"', 'APP_CHANNEL: "ALPHA"')
+computed_compose_sha256 = hashlib.sha256(baseline_compose.encode()).hexdigest()
 require(
     computed_compose_sha256 == DEV_COMPOSE_SHA256,
-    "DEV Compose content differs from the recipe accepted on 10.10.10.235",
+    "DEV runtime differs from its accepted baseline beyond the BETA UI image/stage",
 )
 
-# Package revision; the unchanged runtime evidence below remains 0.1.11-dev.
+# BETA release; the historical Core 31 baseline evidence below remains 0.1.11-dev.
 require('version: "0.1.12-dev"' in manifest, "manifest must be 0.1.12-dev")
 require(evidence.get("app_version") == "0.1.11-dev", "evidence must name the 0.1.11 DEV app version")
 require(

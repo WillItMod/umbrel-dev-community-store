@@ -5,14 +5,10 @@ name: AxeBC2
 version: "0.1.12-dev"
 tagline: BC2 node + solo pool
 description: >-
-  ALPHA RELEASE (DEV CHANNEL)
+  BETA RELEASE (DEV CHANNEL)
 
-  AxeBC2 is functional and has successfully found blocks, but it is still under
-  active development. Expect rough edges, occasional breaking changes, and
-  mining/pool behavior that may still need tuning.
-
-  Use this build if you are happy to test, mine, and send helpful feedback.
-  For known-good production setups, use stable/main channel apps.
+  AxeBC2 is a functional BitcoinII node and solo pool that has successfully
+  found blocks. This BETA build includes the latest fixes and refinements.
 
   Run a BitcoinII (BC2) full node and an integrated solo Stratum v1 pool (ckpool) as a single app.
 
@@ -47,10 +43,12 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
+  Moves the DEV release to BETA and removes the general ALPHA/BETA warning
+  banner. The release stage remains visible beside the version.
   Fixes Umbrel installation by removing its dependency on the 5tratumOS host
   build.json file. 5tratumOS keeps its existing startup recipe and OS version
-  check. This packaging-only update retains the 0.1.11 application image,
-  Core 31 migration checks, payout address, and existing blockchain data.
+  check. The 0.1.12 application update retains Core 31 migration checks,
+  the payout address, and existing blockchain data.
 
   Included fixes from 0.1.11:
   Corrects payout-address validation: BitcoinII Core-accepted mainnet addresses

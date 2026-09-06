@@ -48,8 +48,13 @@ class UmbrelPackagingTests(unittest.TestCase):
     def test_generated_artifacts_are_current(self):
         subprocess.run([sys.executable, str(ROOT / "scripts/build-axebc2-umbrel.py"), "--check"], check=True)
 
-    def test_accepted_5tratumos_recipe_remains_byte_identical(self):
-        self.assertEqual(hashlib.sha256((APP / "docker-compose.yml").read_bytes()).hexdigest(),
+    def test_5tratumos_recipe_changes_only_the_beta_ui_image_and_stage(self):
+        source = (APP / "docker-compose.yml").read_text()
+        current = yaml.safe_load(source)["services"]["app"]["image"]
+        baseline = source.replace(current,
+            "ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.11-candidate.ecf6e2c8cfd0@sha256:23a7962e223da5549eba52697c6f4cfa16ab74cba935c68c48148a4c515302b4"
+        ).replace('APP_CHANNEL: "BETA"', 'APP_CHANNEL: "ALPHA"')
+        self.assertEqual(hashlib.sha256(baseline.encode()).hexdigest(),
                          "93ceba92069947f47d650a5fb32205836fe070d83707f36912a2e0e83beb1244")
 
     def test_umbrel_envsubst_and_compose_keep_pins_and_auth_without_os_bind(self):

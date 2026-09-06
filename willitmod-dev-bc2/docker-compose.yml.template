@@ -92,7 +92,7 @@ services:
     - /bin/sh
     - /opt/axebc2/ckpool-entrypoint.sh
   app:
-    image: ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.11-candidate.ecf6e2c8cfd0@sha256:23a7962e223da5549eba52697c6f4cfa16ab74cba935c68c48148a4c515302b4
+    image: ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.12-candidate.3b893173de7b@sha256:5defc8ac3c1d6e188959ed5c0642165e66108701c5ce3881e909c0994c8e3189
     user: 1000:1000
     restart: on-failure
     stop_grace_period: 30s
@@ -116,7 +116,7 @@ services:
     environment:
       NETWORK_IP: ${NETWORK_IP}
       STATIC_DIR: /app/static
-      APP_CHANNEL: ALPHA
+      APP_CHANNEL: BETA
       APP_VERSION_SUFFIX: -dev
       BTC2D_IMAGE: ghcr.io/willitmod/bitcoinii-core:31.1.0-rc.cdf44542dde2@sha256:8875917ece57668fe9925d40a256ce8d429a3071511bb555d4ace1fa4370afc6
       CKPOOL_IMAGE: ghcr.io/willitmod/docker-ckpool-solo:590fb2a@sha256:8a9a7f10c8138d0f55533132ee7710a06715a42a49f75efb39be3350ada4fa6e
