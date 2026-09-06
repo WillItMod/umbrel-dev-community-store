@@ -24,7 +24,13 @@ class AxeBC2DevFinalizerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "scripts").mkdir(); (self.root / "willitmod-dev-bc2").mkdir()
         shutil.copy2(SCRIPT, self.root / "scripts" / SCRIPT.name)
+        # This finalizer belongs to 0.1.11. Restore that exact UI pin/stage
+        # before exercising its historical acceptance workflow.
         fixture = COMPOSE.read_text(encoding="utf-8")
+        fixture = fixture.replace(
+            "ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.12-candidate.3b893173de7b@sha256:5defc8ac3c1d6e188959ed5c0642165e66108701c5ce3881e909c0994c8e3189",
+            "ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.11-candidate.ecf6e2c8cfd0@" + APP_DIGEST,
+        ).replace('APP_CHANNEL: "BETA"', 'APP_CHANNEL: "ALPHA"')
         fixture = re.sub(r"(ghcr\.io/willitmod/axebc2-app-umbrel-dev:0\.1\.11-candidate\.ecf6e2c8cfd0@sha256:)[0-9a-f]{64}", r"\1APP_CANDIDATE_DIGEST_REQUIRED", fixture)
         (self.root / "willitmod-dev-bc2/docker-compose.yml").write_text(fixture, encoding="utf-8")
         self.assertEqual(fixture.count("APP_CANDIDATE_DIGEST_REQUIRED"), 1)
