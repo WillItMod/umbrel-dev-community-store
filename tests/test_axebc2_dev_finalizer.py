@@ -4,11 +4,14 @@ import os
 import re
 from pathlib import Path
 import shutil
+import sys
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from axebc2_release_state import APP_TAG as CURRENT_APP_TAG, APP_DIGEST as CURRENT_APP_DIGEST
 SCRIPT = ROOT / "scripts/finalize-axebc2-0.1.11-dev.sh"
 COMPOSE = ROOT / "willitmod-dev-bc2/docker-compose.yml"
 APP_DIGEST = "sha256:23a7962e223da5549eba52697c6f4cfa16ab74cba935c68c48148a4c515302b4"
@@ -28,7 +31,7 @@ class AxeBC2DevFinalizerTests(unittest.TestCase):
         # before exercising its historical acceptance workflow.
         fixture = COMPOSE.read_text(encoding="utf-8")
         fixture = fixture.replace(
-            "ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.12-candidate.3b893173de7b@sha256:5defc8ac3c1d6e188959ed5c0642165e66108701c5ce3881e909c0994c8e3189",
+            CURRENT_APP_TAG + "@" + CURRENT_APP_DIGEST,
             "ghcr.io/willitmod/axebc2-app-umbrel-dev:0.1.11-candidate.ecf6e2c8cfd0@" + APP_DIGEST,
         ).replace('APP_CHANNEL: "BETA"', 'APP_CHANNEL: "ALPHA"')
         fixture = re.sub(r"(ghcr\.io/willitmod/axebc2-app-umbrel-dev:0\.1\.11-candidate\.ecf6e2c8cfd0@sha256:)[0-9a-f]{64}", r"\1APP_CANDIDATE_DIGEST_REQUIRED", fixture)
