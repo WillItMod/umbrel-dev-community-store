@@ -2,7 +2,7 @@ manifestVersion: 1
 id: willitmod-dev-bc2
 category: bitcoin
 name: AxeBC2
-version: "0.1.13-dev"
+version: "0.1.14-dev"
 tagline: BC2 node + solo pool
 description: >-
   BETA RELEASE (DEV CHANNEL)
@@ -43,9 +43,19 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Aligns the application image and store package at version 0.1.13 across
-  DEV and MAIN. Includes the BETA presentation update and removal of the
-  general ALPHA/BETA warning banner.
+  Fixes AxeBC2 installation failing near completion on Umbrel 2. The app now
+  starts correctly when Umbrel uses its new built-in authentication gateway,
+  while preserving authentication support for older Umbrel releases. Its unique
+  gateway hostname is declared explicitly so Umbrel 2 can register port 21219.
+  Existing blockchain data, payout settings, and Core 31 migration safeguards
+  are preserved. BitcoinII Core and CKPool versions are unchanged. An existing
+  chain without a verified Core 31 completion record still runs the required
+  one-time reindex; completed migrations do not repeat it.
+
+  Included changes from 0.1.13:
+  Aligns the application image and store package at version 0.1.13 across DEV
+  and MAIN. Includes the BETA presentation update and removal of the general
+  ALPHA/BETA warning banner.
   Fixes Umbrel installation by removing its dependency on the 5tratumOS host
   build.json file. 5tratumOS retains its native startup checks. The update
   preserves Core 31 migration checks, payout settings, and existing blockchain
